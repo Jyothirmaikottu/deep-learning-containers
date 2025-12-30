@@ -1,2 +1,3 @@
-runner-label:
-  - "jkottu-vllm-runner"
+self-hosted-runner:
+  labels:
+    - jkottu-vllm-runner
