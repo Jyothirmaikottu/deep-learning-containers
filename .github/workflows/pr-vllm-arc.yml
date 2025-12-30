@@ -1,9 +1,8 @@
 name: PR - vLLM ARC
 
 on:
-  pull_request:
+  push:
     branches: [arc-vllm-testing]
-    types: [opened, reopened, synchronize]
     paths:
       - "**vllm**"
 
