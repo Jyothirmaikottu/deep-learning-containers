@@ -1,0 +1,527 @@
+name: PR - vLLM ARC
+
+on:
+  pull_request:
+    branches: [master]
+    types: [opened, reopened, synchronize]
+    paths:
+      - "**vllm**"
+
+permissions:
+  contents: read
+  pull-requests: read
+
+env:
+  # Common
+  CONTAINER_TYPE: "general"
+  FRAMEWORK: "vllm"
+  PYTHON_VERSION: "py312"
+  CUDA_VERSION: "cu129"
+  OS_VERSION: "ubuntu22.04"
+
+  # vLLM EC2 - Using public ECR image
+  VLLM_VERSION: 0.13.0
+  PROD_EC2_IMAGE: public.ecr.aws/deep-learning-containers/vllm:0.13.0-gpu-py312-ec2
+
+  # vLLM SageMaker - Using public ECR image  
+  PROD_SAGEMAKER_IMAGE: public.ecr.aws/deep-learning-containers/vllm:0.13.0-gpu-py312-ec2
+
+  # vLLM RayServe - Using public ECR image
+  VLLM_RAYSERVE_VERSION: 0.10.2
+  PROD_RAYSERVE_IMAGE: public.ecr.aws/deep-learning-containers/vllm:0.13.0-gpu-py312-ec2
+
+  # CI environment configuration
+  FORCE_COLOR: "1"
+
+jobs:
+  gatekeeper:
+    runs-on: ubuntu-latest
+    concurrency:
+      group: ${{ github.workflow }}-gate-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+    steps:
+      - name: Checkout base branch (safe)
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          fetch-depth: 1
+
+      - name: Run permission gate (from base)
+        uses: ./.github/actions/pr-permission-gate
+
+  check-changes:
+    needs: [gatekeeper]
+    if: success()
+    runs-on: ubuntu-latest
+    concurrency:
+      group: ${{ github.workflow }}-check-changes-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+    outputs:
+      build-change: ${{ steps.changes.outputs.build-change }}
+      test-change: ${{ steps.changes.outputs.test-change }}
+    steps:
+      - name: Checkout DLC source
+        uses: actions/checkout@v5
+
+      - name: Setup python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Run pre-commit
+        uses: pre-commit/action@v3.0.1
+        with:
+          extra_args: --all-files
+
+      - name: Detect file changes
+        id: changes
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            build-change:
+              - "docker/vllm/**"
+              - "scripts/vllm/**"
+              - "scripts/common/**"
+              - "scripts/telemetry/**"
+              - ".github/workflows/pr-vllm-arc*"
+            test-change:
+              - "test/vllm/**"
+
+  # ==============================================
+  # =============== vLLM EC2 jobs ================
+  # ==============================================
+  set-ec2-test-environment:
+    needs: [check-changes]
+    if: |
+      always() && !failure() && !cancelled() &&
+      (needs.check-changes.outputs.build-change == 'true' || needs.check-changes.outputs.test-change == 'true')
+    runs-on: ubuntu-latest
+    concurrency:
+      group: ${{ github.workflow }}-set-ec2-test-environment-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+    outputs:
+      image-uri: ${{ steps.set-env.outputs.IMAGE_URI }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set test environment
+        id: set-env
+        run: |
+          # Always use the public ECR image since we're not building
+          IMAGE_URI=${{ env.PROD_EC2_IMAGE }}
+          echo "Image URI to test: ${IMAGE_URI}"
+          echo "IMAGE_URI=${IMAGE_URI}" >> ${GITHUB_OUTPUT}
+
+  vllm-ec2-regression-test:
+    needs: [set-ec2-test-environment]
+    if: success()
+    runs-on: arc-runner-set
+    concurrency:
+      group: ${{ github.workflow }}-vllm-ec2-regression-test-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+    timeout-minutes: 60
+    steps:
+      - name: Checkout DLC source
+        uses: actions/checkout@v5
+
+      - name: Checkout vLLM tests
+        uses: actions/checkout@v5
+        with:
+          repository: vllm-project/vllm
+          ref: v${{ env.VLLM_VERSION }}
+          path: vllm_source
+
+      - name: Start container
+        run: |
+          CONTAINER_ID=$(docker run -d -it --rm --gpus=all --entrypoint /bin/bash \
+            -v ${HOME}/.cache/huggingface:/root/.cache/huggingface \
+            -v ${HOME}/.cache/vllm:/root/.cache/vllm \
+            -v .:/workdir --workdir /workdir \
+            -e HF_TOKEN=${{ secrets.HUGGING_FACE_HUB_TOKEN }} \
+            ${{ needs.set-ec2-test-environment.outputs.image-uri }})
+          echo "CONTAINER_ID=$CONTAINER_ID" >> $GITHUB_ENV
+
+      - name: Setup for vLLM tests
+        run: |
+          docker exec ${CONTAINER_ID} scripts/vllm/vllm_0_13_0_test_setup.sh
+
+      - name: Run vLLM tests
+        run: |
+          docker exec ${CONTAINER_ID} scripts/vllm/vllm_regression_test.sh
+
+  vllm-ec2-cuda-test:
+    needs: [set-ec2-test-environment]
+    if: success()
+    runs-on: [self-hosted, arc-runner-set]
+    concurrency:
+      group: ${{ github.workflow }}-vllm-ec2-cuda-test-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+    timeout-minutes: 60
+    steps:
+      - name: Checkout DLC source
+        uses: actions/checkout@v5
+
+      - name: Checkout vLLM tests
+        uses: actions/checkout@v5
+        with:
+          repository: vllm-project/vllm
+          ref: v${{ env.VLLM_VERSION }}
+          path: vllm_source
+
+      - name: Start container
+        run: |
+          CONTAINER_ID=$(docker run -d -it --rm --gpus=all --entrypoint /bin/bash \
+            -v ${HOME}/.cache/huggingface:/root/.cache/huggingface \
+            -v ${HOME}/.cache/vllm:/root/.cache/vllm \
+            -v .:/workdir --workdir /workdir \
+            -e HF_TOKEN=${{ secrets.HUGGING_FACE_HUB_TOKEN }} \
+            ${{ needs.set-ec2-test-environment.outputs.image-uri }})
+          echo "CONTAINER_ID=$CONTAINER_ID" >> $GITHUB_ENV
+
+      - name: Setup for vLLM tests
+        run: |
+          docker exec ${CONTAINER_ID} scripts/vllm/vllm_0_13_0_test_setup.sh
+
+      - name: Run vLLM tests
+        run: |
+          docker exec ${CONTAINER_ID} scripts/vllm/vllm_cuda_test.sh
+
+  vllm-ec2-example-test:
+    needs: [set-ec2-test-environment]
+    if: success()
+    runs-on: [self-hosted, arc-runner-set]
+    concurrency:
+      group: ${{ github.workflow }}-vllm-ec2-example-test-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+    timeout-minutes: 60
+    steps:
+      - name: Checkout DLC source
+        uses: actions/checkout@v5
+
+      - name: Checkout vLLM tests
+        uses: actions/checkout@v5
+        with:
+          repository: vllm-project/vllm
+          ref: v${{ env.VLLM_VERSION }}
+          path: vllm_source
+
+      - name: Start container
+        run: |
+          CONTAINER_ID=$(docker run -d -it --rm --gpus=all --entrypoint /bin/bash \
+            -v ${HOME}/.cache/huggingface:/root/.cache/huggingface \
+            -v ${HOME}/.cache/vllm:/root/.cache/vllm \
+            -v .:/workdir --workdir /workdir \
+            -e HF_TOKEN=${{ secrets.HUGGING_FACE_HUB_TOKEN }} \
+            ${{ needs.set-ec2-test-environment.outputs.image-uri }})
+          echo "CONTAINER_ID=$CONTAINER_ID" >> $GITHUB_ENV
+
+      - name: Setup for vLLM tests
+        run: |
+          docker exec ${CONTAINER_ID} scripts/vllm/vllm_0_13_0_test_setup.sh
+
+      - name: Run vLLM tests
+        run: |
+          docker exec ${CONTAINER_ID} scripts/vllm/vllm_ec2_examples_test.sh
+
+  # ===================================================
+  # =============== vLLM RayServe jobs ================
+  # ===================================================
+  set-rayserve-test-environment:
+    needs: [check-changes]
+    if: |
+      always() && !failure() && !cancelled() &&
+      (needs.check-changes.outputs.build-change == 'true' || needs.check-changes.outputs.test-change == 'true')
+    runs-on: ubuntu-latest
+    concurrency:
+      group: ${{ github.workflow }}-set-rayserve-test-environment-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+    outputs:
+      image-uri: ${{ steps.set-env.outputs.IMAGE_URI }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set test environment
+        id: set-env
+        run: |
+          # Always use the public ECR image since we're not building
+          IMAGE_URI=${{ env.PROD_RAYSERVE_IMAGE }}
+          echo "Image URI to test: ${IMAGE_URI}"
+          echo "IMAGE_URI=${IMAGE_URI}" >> ${GITHUB_OUTPUT}
+
+  vllm-rayserve-regression-test:
+    needs: [set-rayserve-test-environment]
+    if: success()
+    runs-on: [self-hosted, arc-runner-set]
+    concurrency:
+      group: ${{ github.workflow }}-vllm-rayserve-regression-test-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+    timeout-minutes: 60
+    steps:
+      - name: Checkout DLC source
+        uses: actions/checkout@v5
+
+      - name: Checkout vLLM tests
+        uses: actions/checkout@v5
+        with:
+          repository: vllm-project/vllm
+          ref: v${{ env.VLLM_RAYSERVE_VERSION }}
+          path: vllm_source
+
+      - name: Start container
+        run: |
+          CONTAINER_ID=$(docker run -d -it --rm --gpus=all --entrypoint /bin/bash \
+            -v ${HOME}/.cache/huggingface:/root/.cache/huggingface \
+            -v ${HOME}/.cache/vllm:/root/.cache/vllm \
+            -v .:/workdir --workdir /workdir \
+            -e HF_TOKEN=${{ secrets.HUGGING_FACE_HUB_TOKEN }} \
+            ${{ needs.set-rayserve-test-environment.outputs.image-uri }})
+          echo "CONTAINER_ID=$CONTAINER_ID" >> $GITHUB_ENV
+
+      - name: Setup for vLLM tests
+        run: |
+          docker exec ${CONTAINER_ID} scripts/vllm/vllm_0_10_2_test_setup.sh
+
+      - name: Run vLLM tests
+        run: |
+          docker exec ${CONTAINER_ID} scripts/vllm/vllm_regression_test.sh
+
+  vllm-rayserve-cuda-test:
+    needs: [set-rayserve-test-environment]
+    if: success()
+    runs-on: [self-hosted, arc-runner-set]
+    concurrency:
+      group: ${{ github.workflow }}-vllm-rayserve-cuda-test-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+    timeout-minutes: 60
+    steps:
+      - name: Checkout DLC source
+        uses: actions/checkout@v5
+
+      - name: Checkout vLLM tests
+        uses: actions/checkout@v5
+        with:
+          repository: vllm-project/vllm
+          ref: v${{ env.VLLM_RAYSERVE_VERSION }}
+          path: vllm_source
+
+      - name: Start container
+        run: |
+          CONTAINER_ID=$(docker run -d -it --rm --gpus=all --entrypoint /bin/bash \
+            -v ${HOME}/.cache/huggingface:/root/.cache/huggingface \
+            -v ${HOME}/.cache/vllm:/root/.cache/vllm \
+            -v .:/workdir --workdir /workdir \
+            -e HF_TOKEN=${{ secrets.HUGGING_FACE_HUB_TOKEN }} \
+            ${{ needs.set-rayserve-test-environment.outputs.image-uri }})
+          echo "CONTAINER_ID=$CONTAINER_ID" >> $GITHUB_ENV
+
+      - name: Setup for vLLM tests
+        run: |
+          docker exec ${CONTAINER_ID} scripts/vllm/vllm_0_10_2_test_setup.sh
+
+      - name: Run vLLM tests
+        run: |
+          docker exec ${CONTAINER_ID} scripts/vllm/vllm_cuda_test.sh
+
+  vllm-rayserve-example-test:
+    needs: [set-rayserve-test-environment]
+    if: success()
+    runs-on: [self-hosted, arc-runner-set]
+    concurrency:
+      group: ${{ github.workflow }}-vllm-rayserve-example-test-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+    timeout-minutes: 60
+    steps:
+      - name: Checkout DLC source
+        uses: actions/checkout@v5
+
+      - name: Checkout vLLM tests
+        uses: actions/checkout@v5
+        with:
+          repository: vllm-project/vllm
+          ref: v${{ env.VLLM_RAYSERVE_VERSION }}
+          path: vllm_source
+
+      - name: Start container
+        run: |
+          CONTAINER_ID=$(docker run -d -it --rm --gpus=all --entrypoint /bin/bash \
+            -v ${HOME}/.cache/huggingface:/root/.cache/huggingface \
+            -v ${HOME}/.cache/vllm:/root/.cache/vllm \
+            -v .:/workdir --workdir /workdir \
+            -e HF_TOKEN=${{ secrets.HUGGING_FACE_HUB_TOKEN }} \
+            ${{ needs.set-rayserve-test-environment.outputs.image-uri }})
+          echo "CONTAINER_ID=$CONTAINER_ID" >> $GITHUB_ENV
+
+      - name: Setup for vLLM tests
+        run: |
+          docker exec ${CONTAINER_ID} scripts/vllm/vllm_0_10_2_test_setup.sh
+
+      - name: Run vLLM tests
+        run: |
+          docker exec ${CONTAINER_ID} scripts/vllm/vllm_rayserve_examples_test.sh
+
+  # ====================================================
+  # =============== vLLM SageMaker jobs ================
+  # ====================================================
+  set-sagemaker-test-environment:
+    needs: [check-changes]
+    if: |
+      always() && !failure() && !cancelled() &&
+      (needs.check-changes.outputs.build-change == 'true' || needs.check-changes.outputs.test-change == 'true')
+    runs-on: ubuntu-latest
+    concurrency:
+      group: ${{ github.workflow }}-set-sagemaker-test-environment-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+    outputs:
+      image-uri: ${{ steps.set-env.outputs.IMAGE_URI }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set test environment
+        id: set-env
+        run: |
+          # Always use the public ECR image since we're not building
+          IMAGE_URI=${{ env.PROD_SAGEMAKER_IMAGE }}
+          echo "Image URI to test: ${IMAGE_URI}"
+          echo "IMAGE_URI=${IMAGE_URI}" >> ${GITHUB_OUTPUT}
+
+  vllm-sagemaker-regression-test:
+    needs: [set-sagemaker-test-environment]
+    if: success()
+    runs-on: [self-hosted, arc-runner-set]
+    concurrency:
+      group: ${{ github.workflow }}-vllm-sagemaker-regression-test-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+    timeout-minutes: 60
+    steps:
+      - name: Checkout DLC source
+        uses: actions/checkout@v5
+
+      - name: Checkout vLLM tests
+        uses: actions/checkout@v5
+        with:
+          repository: vllm-project/vllm
+          ref: v${{ env.VLLM_VERSION }}
+          path: vllm_source
+
+      - name: Start container
+        run: |
+          CONTAINER_ID=$(docker run -d -it --rm --gpus=all --entrypoint /bin/bash \
+            -v ${HOME}/.cache/huggingface:/root/.cache/huggingface \
+            -v ${HOME}/.cache/vllm:/root/.cache/vllm \
+            -v .:/workdir --workdir /workdir \
+            -e HF_TOKEN=${{ secrets.HUGGING_FACE_HUB_TOKEN }} \
+            ${{ needs.set-sagemaker-test-environment.outputs.image-uri }})
+          echo "CONTAINER_ID=$CONTAINER_ID" >> $GITHUB_ENV
+
+      - name: Setup for vLLM tests
+        run: |
+          docker exec ${CONTAINER_ID} scripts/vllm/vllm_0_13_0_test_setup.sh
+
+      - name: Run vLLM tests
+        run: |
+          docker exec ${CONTAINER_ID} scripts/vllm/vllm_regression_test.sh
+
+  vllm-sagemaker-cuda-test:
+    needs: [set-sagemaker-test-environment]
+    if: success()
+    runs-on: [self-hosted, arc-runner-set]
+    concurrency:
+      group: ${{ github.workflow }}-vllm-sagemaker-cuda-test-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+    timeout-minutes: 60
+    steps:
+      - name: Checkout DLC source
+        uses: actions/checkout@v5
+
+      - name: Checkout vLLM tests
+        uses: actions/checkout@v5
+        with:
+          repository: vllm-project/vllm
+          ref: v${{ env.VLLM_VERSION }}
+          path: vllm_source
+
+      - name: Start container
+        run: |
+          CONTAINER_ID=$(docker run -d -it --rm --gpus=all --entrypoint /bin/bash \
+            -v ${HOME}/.cache/huggingface:/root/.cache/huggingface \
+            -v ${HOME}/.cache/vllm:/root/.cache/vllm \
+            -v .:/workdir --workdir /workdir \
+            -e HF_TOKEN=${{ secrets.HUGGING_FACE_HUB_TOKEN }} \
+            ${{ needs.set-sagemaker-test-environment.outputs.image-uri }})
+          echo "CONTAINER_ID=$CONTAINER_ID" >> $GITHUB_ENV
+
+      - name: Setup for vLLM tests
+        run: |
+          docker exec ${CONTAINER_ID} scripts/vllm/vllm_0_13_0_test_setup.sh
+
+      - name: Run vLLM tests
+        run: |
+          docker exec ${CONTAINER_ID} scripts/vllm/vllm_cuda_test.sh
+
+  vllm-sagemaker-example-test:
+    needs: [set-sagemaker-test-environment]
+    if: success()
+    runs-on: [self-hosted, arc-runner-set]
+    concurrency:
+      group: ${{ github.workflow }}-vllm-sagemaker-example-test-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+    timeout-minutes: 60
+    steps:
+      - name: Checkout DLC source
+        uses: actions/checkout@v5
+
+      - name: Checkout vLLM tests
+        uses: actions/checkout@v5
+        with:
+          repository: vllm-project/vllm
+          ref: v${{ env.VLLM_VERSION }}
+          path: vllm_source
+
+      - name: Start container
+        run: |
+          CONTAINER_ID=$(docker run -d -it --rm --gpus=all --entrypoint /bin/bash \
+            -v ${HOME}/.cache/huggingface:/root/.cache/huggingface \
+            -v ${HOME}/.cache/vllm:/root/.cache/vllm \
+            -v .:/workdir --workdir /workdir \
+            -e HF_TOKEN=${{ secrets.HUGGING_FACE_HUB_TOKEN }} \
+            ${{ needs.set-sagemaker-test-environment.outputs.image-uri }})
+          echo "CONTAINER_ID=$CONTAINER_ID" >> $GITHUB_ENV
+
+      - name: Setup for vLLM tests
+        run: |
+          docker exec ${CONTAINER_ID} scripts/vllm/vllm_0_13_0_test_setup.sh
+
+      - name: Run vLLM tests
+        run: |
+          docker exec ${CONTAINER_ID} scripts/vllm/vllm_sagemaker_examples_test.sh
+
+  vllm-sagemaker-endpoint-test:
+    needs: [set-sagemaker-test-environment]
+    if: |
+      always() && !failure() && !cancelled() &&
+      needs.set-sagemaker-test-environment.result == 'success'
+    runs-on: [self-hosted, arc-runner-set]
+    concurrency:
+      group: ${{ github.workflow }}-vllm-sagemaker-endpoint-test-${{ github.event.pull_request.number }}
+      cancel-in-progress: false
+    timeout-minutes: 45
+    steps:
+      - name: Checkout DLC source
+        uses: actions/checkout@v5
+
+      - name: Install test dependencies
+        run: |
+          python3 -m venv .venv
+          source .venv/bin/activate
+          pip install --upgrade pip
+          pip install -r test/requirements.txt
+          pip install -r test/vllm/sagemaker/requirements.txt
+
+      - name: Run sagemaker endpoint test
+        run: |
+          source .venv/bin/activate
+          cd test/
+          python3 -m pytest -vs -rA --image-uri ${{ needs.set-sagemaker-test-environment.outputs.image-uri }} vllm/sagemaker
