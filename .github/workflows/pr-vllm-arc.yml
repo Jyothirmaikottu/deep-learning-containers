@@ -108,7 +108,7 @@ jobs:
   vllm-ec2-regression-test:
     needs: [set-ec2-test-environment]
     if: success()
-    runs-on: [self-hosted, jkottu-vllm-runner]
+    runs-on: arc-runner-set 
     concurrency:
       group: ${{ github.workflow }}-vllm-ec2-regression-test-${{ github.event.pull_request.number }}
       cancel-in-progress: true
@@ -145,7 +145,7 @@ jobs:
   vllm-ec2-cuda-test:
     needs: [set-ec2-test-environment]
     if: success()
-    runs-on: [self-hosted, jkottu-vllm-runner]
+    runs-on: arc-runner-set 
     concurrency:
       group: ${{ github.workflow }}-vllm-ec2-cuda-test-${{ github.event.pull_request.number }}
       cancel-in-progress: true
@@ -182,7 +182,7 @@ jobs:
   vllm-ec2-example-test:
     needs: [set-ec2-test-environment]
     if: success()
-    runs-on: [self-hosted, jkottu-vllm-runner]
+    runs-on: arc-runner-set 
     concurrency:
       group: ${{ github.workflow }}-vllm-ec2-example-test-${{ github.event.pull_request.number }}
       cancel-in-progress: true
