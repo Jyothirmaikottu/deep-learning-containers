@@ -3,8 +3,6 @@ name: PR - vLLM ARC
 on:
   push:
     branches: [arc-vllm-testing]
-    paths:
-      - "**vllm**"
 
 permissions:
   contents: read
