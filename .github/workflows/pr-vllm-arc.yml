@@ -20,7 +20,7 @@ env:
   VLLM_VERSION: 0.13.0
   PROD_EC2_IMAGE: public.ecr.aws/deep-learning-containers/vllm:0.13.0-gpu-py312-ec2
 
-  # vLLM SageMaker - Using public ECR image  
+  # vLLM SageMaker - Using public ECR image
   PROD_SAGEMAKER_IMAGE: public.ecr.aws/deep-learning-containers/vllm:0.13.0-gpu-py312-ec2
 
   # vLLM RayServe - Using public ECR image
