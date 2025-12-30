@@ -220,3 +220,4 @@ jobs:
       - name: Run vLLM tests
         run: |
           docker exec ${CONTAINER_ID} scripts/vllm/vllm_ec2_examples_test.sh
+
