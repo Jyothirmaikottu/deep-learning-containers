@@ -125,12 +125,8 @@ jobs:
           path: vllm_source
       - name: Smoke test
         run: |
-          hostname
-          sudo yum update -y
-          sudo yum install docker -y
-          sudo systemctl start docker.service
-          sudo systemctl enable docker
-          docker ps
+          hostnamectl
+          uname -a
       - name: Start container
         run: |
           CONTAINER_ID=$(docker run -d -it --rm --gpus=all --entrypoint /bin/bash \
