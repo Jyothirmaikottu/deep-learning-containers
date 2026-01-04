@@ -125,8 +125,7 @@ jobs:
           path: vllm_source
       - name: Smoke test
         run: |
-          hostnamectl
-          uname -a
+          docker ps
       - name: Start container
         run: |
           CONTAINER_ID=$(docker run -d -it --rm --gpus=all --entrypoint /bin/bash \
