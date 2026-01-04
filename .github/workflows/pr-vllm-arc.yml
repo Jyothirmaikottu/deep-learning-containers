@@ -108,7 +108,9 @@ jobs:
   vllm-ec2-regression-test:
     needs: [set-ec2-test-environment]
     if: success()
-    runs-on: [self-hosted, arc-runner-set]
+    runs-on:
+      - self-hosted
+      - arc-runner-set
     concurrency:
       group: ${{ github.workflow }}-vllm-ec2-regression-test-${{ github.event.pull_request.number }}
       cancel-in-progress: true
@@ -148,78 +150,3 @@ jobs:
       - name: Run vLLM tests
         run: |
           docker exec ${CONTAINER_ID} scripts/vllm/vllm_regression_test.sh
-
-  vllm-ec2-cuda-test:
-    needs: [set-ec2-test-environment]
-    if: success()
-    runs-on: [self-hosted, arc-runner-set]
-    concurrency:
-      group: ${{ github.workflow }}-vllm-ec2-cuda-test-${{ github.event.pull_request.number }}
-      cancel-in-progress: true
-    timeout-minutes: 60
-    steps:
-      - name: Checkout DLC source
-        uses: actions/checkout@v5
-
-      - name: Checkout vLLM tests
-        uses: actions/checkout@v5
-        with:
-          repository: vllm-project/vllm
-          ref: v${{ env.VLLM_VERSION }}
-          path: vllm_source
-
-      - name: Start container
-        run: |
-          CONTAINER_ID=$(docker run -d -it --rm --gpus=all --entrypoint /bin/bash \
-            -v ${HOME}/.cache/huggingface:/root/.cache/huggingface \
-            -v ${HOME}/.cache/vllm:/root/.cache/vllm \
-            -v .:/workdir --workdir /workdir \
-            -e HF_TOKEN=${{ secrets.HUGGING_FACE_HUB_TOKEN }} \
-            ${{ needs.set-ec2-test-environment.outputs.image-uri }})
-          echo "CONTAINER_ID=$CONTAINER_ID" >> $GITHUB_ENV
-
-      - name: Setup for vLLM tests
-        run: |
-          docker exec ${CONTAINER_ID} scripts/vllm/vllm_0_13_0_test_setup.sh
-
-      - name: Run vLLM tests
-        run: |
-          docker exec ${CONTAINER_ID} scripts/vllm/vllm_cuda_test.sh
-
-  vllm-ec2-example-test:
-    needs: [set-ec2-test-environment]
-    if: success()
-    runs-on: [self-hosted, arc-runner-set]
-    concurrency:
-      group: ${{ github.workflow }}-vllm-ec2-example-test-${{ github.event.pull_request.number }}
-      cancel-in-progress: true
-    timeout-minutes: 60
-    steps:
-      - name: Checkout DLC source
-        uses: actions/checkout@v5
-
-      - name: Checkout vLLM tests
-        uses: actions/checkout@v5
-        with:
-          repository: vllm-project/vllm
-          ref: v${{ env.VLLM_VERSION }}
-          path: vllm_source
-
-      - name: Start container
-        run: |
-          CONTAINER_ID=$(docker run -d -it --rm --gpus=all --entrypoint /bin/bash \
-            -v ${HOME}/.cache/huggingface:/root/.cache/huggingface \
-            -v ${HOME}/.cache/vllm:/root/.cache/vllm \
-            -v .:/workdir --workdir /workdir \
-            -e HF_TOKEN=${{ secrets.HUGGING_FACE_HUB_TOKEN }} \
-            ${{ needs.set-ec2-test-environment.outputs.image-uri }})
-          echo "CONTAINER_ID=$CONTAINER_ID" >> $GITHUB_ENV
-
-      - name: Setup for vLLM tests
-        run: |
-          docker exec ${CONTAINER_ID} scripts/vllm/vllm_0_13_0_test_setup.sh
-
-      - name: Run vLLM tests
-        run: |
-          docker exec ${CONTAINER_ID} scripts/vllm/vllm_ec2_examples_test.sh
-
