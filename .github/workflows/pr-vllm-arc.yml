@@ -123,23 +123,61 @@ jobs:
           repository: vllm-project/vllm
           ref: v${{ env.VLLM_VERSION }}
           path: vllm_source
-      - name: Smoke test
-        run: |
-          docker ps
-      - name: Start container
-        run: |
-          CONTAINER_ID=$(docker run -d -it --rm --gpus=all --entrypoint /bin/bash \
-            -v ${HOME}/.cache/huggingface:/root/.cache/huggingface \
-            -v ${HOME}/.cache/vllm:/root/.cache/vllm \
-            -v .:/workdir --workdir /workdir \
-            -e HF_TOKEN=${{ secrets.HUGGING_FACE_HUB_TOKEN }} \
-            ${{ needs.set-ec2-test-environment.outputs.image-uri }})
-          echo "CONTAINER_ID=$CONTAINER_ID" >> $GITHUB_ENV
 
       - name: Setup for vLLM tests
         run: |
-          docker exec ${CONTAINER_ID} scripts/vllm/vllm_0_13_0_test_setup.sh
+          kubectl run vllm-setup-${{ github.run_id }}-${{ github.run_attempt }} \
+            --image=${{ env.PROD_EC2_IMAGE }} \
+            --rm -i --restart=Never \
+            --overrides='{
+              "spec": {
+                "containers": [{
+                  "name": "setup",
+                  "image": "${{ env.PROD_EC2_IMAGE }}",
+                  "resources": {"limits": {"nvidia.com/gpu": "1"}},
+                  "command": ["/bin/bash", "-c", "scripts/vllm/vllm_0_13_0_test_setup.sh"],
+                  "env": [{
+                    "name": "HF_TOKEN", 
+                    "value": "${{ secrets.HUGGING_FACE_HUB_TOKEN }}"
+                  }],
+                  "volumeMounts": [{
+                    "name": "workspace",
+                    "mountPath": "/workdir"
+                  }],
+                  "workingDir": "/workdir"
+                }],
+                "volumes": [{
+                  "name": "workspace",
+                  "emptyDir": {"sizeLimit": "10Gi"}
+                }]
+              }
+            }'
 
-      - name: Run vLLM tests
+      - name: Run vLLM regression tests
         run: |
-          docker exec ${CONTAINER_ID} scripts/vllm/vllm_regression_test.sh
+          kubectl run vllm-regression-test-${{ github.run_id }}-${{ github.run_attempt }} \
+            --image=${{ env.PROD_EC2_IMAGE }} \
+            --rm -i --restart=Never \
+            --overrides='{
+              "spec": {
+                "containers": [{
+                  "name": "test",
+                  "image": "${{ env.PROD_EC2_IMAGE }}",
+                  "resources": {"limits": {"nvidia.com/gpu": "1"}},
+                  "command": ["/bin/bash", "-c", "scripts/vllm/vllm_regression_test.sh"],
+                  "env": [{
+                    "name": "HF_TOKEN", 
+                    "value": "${{ secrets.HUGGING_FACE_HUB_TOKEN }}"
+                  }],
+                  "volumeMounts": [{
+                    "name": "workspace",
+                    "mountPath": "/workdir"
+                  }],
+                  "workingDir": "/workdir"
+                }],
+                "volumes": [{
+                  "name": "workspace",
+                  "emptyDir": {"sizeLimit": "10Gi"}
+                }]
+              }
+            }'
