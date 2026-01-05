@@ -81,9 +81,6 @@ jobs:
       always() && !failure() && !cancelled() &&
       (needs.check-changes.outputs.build-change == 'true' || needs.check-changes.outputs.test-change == 'true')
     runs-on: arc-runner-set
-    container:
-      image: public.ecr.aws/deep-learning-containers/vllm:0.13.0-gpu-py312-ec2
-      options: --gpus all
     concurrency:
       group: ${{ github.workflow }}-vllm-gpu-smoke-test-${{ github.event.pull_request.number }}
       cancel-in-progress: true
@@ -94,21 +91,31 @@ jobs:
 
       - name: Check runner environment
         run: |
-          echo "=== System Information ==="
-          uname -a
-          echo ""
-          echo "=== GPU Check ==="
-          nvidia-smi || echo "nvidia-smi not available"
-          echo ""
-          echo "=== Python Environment ==="
-          python3 --version
-          pip list | grep -E "(vllm|torch)" || echo "vLLM/torch not found"
-          echo ""
+          docker run --rm --gpus all \
+            -v ${{ github.workspace }}:/workspace \
+            -w /workspace \
+            public.ecr.aws/deep-learning-containers/vllm:0.13.0-gpu-py312-ec2 \
+            bash -c "
+            echo '=== System Information ==='
+            uname -a
+            echo ''
+            echo '=== GPU Check ==='
+            nvidia-smi || echo 'nvidia-smi not available'
+            echo ''
+            echo '=== Python Environment ==='
+            python3 --version
+            pip list | grep -E '(vllm|torch)' || echo 'vLLM/torch not found'
+            echo ''
+            "
 
       - name: Test DLC container
         run: |
-          echo "Testing vLLM DLC container..."
-          python3 -c "
+          docker run --rm --gpus all \
+            -v ${{ github.workspace }}:/workspace \
+            -w /workspace \
+            -e HF_TOKEN="${{ secrets.HUGGING_FACE_HUB_TOKEN }}" \
+            public.ecr.aws/deep-learning-containers/vllm:0.13.0-gpu-py312-ec2 \
+            python3 -c "
           import vllm
           import torch
           print('vLLM imported successfully')
@@ -121,16 +128,11 @@ jobs:
           else:
               print('No CUDA GPUs available')
           "
-        env:
-          HF_TOKEN: ${{ secrets.HUGGING_FACE_HUB_TOKEN }}
 
   vllm-regression-test:
     needs: [vllm-gpu-smoke-test]
     if: success()
     runs-on: arc-runner-set
-    container:
-      image: public.ecr.aws/deep-learning-containers/vllm:0.13.0-gpu-py312-ec2
-      options: --gpus all
     concurrency:
       group: ${{ github.workflow }}-vllm-regression-test-${{ github.event.pull_request.number }}
       cancel-in-progress: true
@@ -148,20 +150,22 @@ jobs:
 
       - name: Run vLLM regression tests
         run: |
-          chmod +x scripts/vllm/vllm_0_13_0_test_setup.sh
-          scripts/vllm/vllm_0_13_0_test_setup.sh
-          chmod +x scripts/vllm/vllm_regression_test.sh
-          scripts/vllm/vllm_regression_test.sh
-        env:
-          HF_TOKEN: ${{ secrets.HUGGING_FACE_HUB_TOKEN }}
+          docker run --rm --gpus all \
+            -v ${{ github.workspace }}:/workspace \
+            -w /workspace \
+            -e HF_TOKEN="${{ secrets.HUGGING_FACE_HUB_TOKEN }}" \
+            public.ecr.aws/deep-learning-containers/vllm:0.13.0-gpu-py312-ec2 \
+            bash -c "
+            chmod +x scripts/vllm/vllm_0_13_0_test_setup.sh
+            scripts/vllm/vllm_0_13_0_test_setup.sh
+            chmod +x scripts/vllm/vllm_regression_test.sh
+            scripts/vllm/vllm_regression_test.sh
+            "
 
   vllm-cuda-test:
     needs: [vllm-gpu-smoke-test]
     if: success()
     runs-on: arc-runner-set
-    container:
-      image: public.ecr.aws/deep-learning-containers/vllm:0.13.0-gpu-py312-ec2
-      options: --gpus all
     concurrency:
       group: ${{ github.workflow }}-vllm-cuda-test-${{ github.event.pull_request.number }}
       cancel-in-progress: true
@@ -179,20 +183,22 @@ jobs:
 
       - name: Run vLLM CUDA tests
         run: |
-          chmod +x scripts/vllm/vllm_0_13_0_test_setup.sh
-          scripts/vllm/vllm_0_13_0_test_setup.sh
-          chmod +x scripts/vllm/vllm_cuda_test.sh
-          scripts/vllm/vllm_cuda_test.sh
-        env:
-          HF_TOKEN: ${{ secrets.HUGGING_FACE_HUB_TOKEN }}
+          docker run --rm --gpus all \
+            -v ${{ github.workspace }}:/workspace \
+            -w /workspace \
+            -e HF_TOKEN="${{ secrets.HUGGING_FACE_HUB_TOKEN }}" \
+            public.ecr.aws/deep-learning-containers/vllm:0.13.0-gpu-py312-ec2 \
+            bash -c "
+            chmod +x scripts/vllm/vllm_0_13_0_test_setup.sh
+            scripts/vllm/vllm_0_13_0_test_setup.sh
+            chmod +x scripts/vllm/vllm_cuda_test.sh
+            scripts/vllm/vllm_cuda_test.sh
+            "
 
   vllm-examples-test:
     needs: [vllm-gpu-smoke-test]
     if: success()
     runs-on: arc-runner-set
-    container:
-      image: public.ecr.aws/deep-learning-containers/vllm:0.13.0-gpu-py312-ec2
-      options: --gpus all
     concurrency:
       group: ${{ github.workflow }}-vllm-examples-test-${{ github.event.pull_request.number }}
       cancel-in-progress: true
@@ -210,9 +216,14 @@ jobs:
 
       - name: Run vLLM examples tests
         run: |
-          chmod +x scripts/vllm/vllm_0_13_0_test_setup.sh
-          scripts/vllm/vllm_0_13_0_test_setup.sh
-          chmod +x scripts/vllm/vllm_ec2_examples_test.sh
-          scripts/vllm/vllm_ec2_examples_test.sh
-        env:
-          HF_TOKEN: ${{ secrets.HUGGING_FACE_HUB_TOKEN }}
+          docker run --rm --gpus all \
+            -v ${{ github.workspace }}:/workspace \
+            -w /workspace \
+            -e HF_TOKEN="${{ secrets.HUGGING_FACE_HUB_TOKEN }}" \
+            public.ecr.aws/deep-learning-containers/vllm:0.13.0-gpu-py312-ec2 \
+            bash -c "
+            chmod +x scripts/vllm/vllm_0_13_0_test_setup.sh
+            scripts/vllm/vllm_0_13_0_test_setup.sh
+            chmod +x scripts/vllm/vllm_ec2_examples_test.sh
+            scripts/vllm/vllm_ec2_examples_test.sh
+            "
