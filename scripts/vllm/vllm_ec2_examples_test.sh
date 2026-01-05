@@ -3,7 +3,7 @@ set -eux
 
 nvidia-smi
 cd vllm_source/examples
-pip install tensorizer # for tensorizer test
+uv pip install --system tensorizer # for tensorizer test
 python3 offline_inference/basic/generate.py --model facebook/opt-125m
 # python3 offline_inference/basic/generate.py --model meta-llama/Llama-2-13b-chat-hf --cpu-offload-gb 10
 python3 offline_inference/basic/chat.py
