@@ -17,7 +17,7 @@ env:
   OS_VERSION: "ubuntu22.04"
 
   # vLLM - Using AWS DLC public ECR image
-  VLLM_VERSION: 0.9
+  VLLM_VERSION: 0.13.0
   VLLM_DLC_IMAGE: public.ecr.aws/deep-learning-containers/vllm:0.13.0-gpu-py312-ec2
 
   # CI environment configuration
@@ -75,278 +75,147 @@ jobs:
   # ==============================================
   # =============== vLLM Tests ==================
   # ==============================================
-  vllm-gpu-infrastructure-test:
+  vllm-gpu-smoke-test:
     needs: [check-changes]
     if: |
       always() && !failure() && !cancelled() &&
       (needs.check-changes.outputs.build-change == 'true' || needs.check-changes.outputs.test-change == 'true')
     runs-on: arc-runner-set
     concurrency:
-      group: ${{ github.workflow }}-vllm-gpu-infrastructure-test-${{ github.event.pull_request.number }}
+      group: ${{ github.workflow }}-vllm-gpu-smoke-test-${{ github.event.pull_request.number }}
       cancel-in-progress: true
-    timeout-minutes: 30
+    timeout-minutes: 15
     steps:
       - name: Checkout DLC source
         uses: actions/checkout@v5
 
-      - name: Test GPU Infrastructure
+      - name: Check GPU availability
         run: |
-          cat <<EOF | kubectl apply -f -
-          apiVersion: v1
-          kind: Pod
-          metadata:
-            name: gpu-nvidia-smi-test-${{ github.run_id }}
-          spec:
-            restartPolicy: OnFailure
-            tolerations:
-            - key: "nvidia.com/gpu"
-              operator: "Exists"
-              effect: "NoSchedule"
-            containers:
-            - name: cuda-container
-              image: nvidia/cuda:12.9.1-base-ubuntu20.04
-              command: ["nvidia-smi"]
-              resources:
-                requests:
-                  memory: "24Gi"
-                limits:
-                  nvidia.com/gpu: 1
-          EOF
+          echo "Checking if nvidia-smi is available..."
+          if command -v nvidia-smi &> /dev/null; then
+            nvidia-smi
+          else
+            echo "nvidia-smi not found, checking for GPU via other methods..."
+            ls -la /dev/nvidia* || echo "No NVIDIA devices found"
+            lspci | grep -i nvidia || echo "No NVIDIA GPUs detected via lspci"
+          fi
 
-      - name: Wait for GPU test completion
+      - name: Check Python and basic dependencies
         run: |
-          kubectl wait --for=jsonpath='{.status.phase}'=Succeeded pod/gpu-nvidia-smi-test-${{ github.run_id }} --timeout=300s
+          python3 --version
+          pip3 --version
+          python3 -c "import sys; print(f'Python path: {sys.executable}')"
 
-      - name: Check GPU test results
-        run: |
-          kubectl logs gpu-nvidia-smi-test-${{ github.run_id }}
-
-      - name: Cleanup GPU test pod
-        if: always()
-        run: |
-          kubectl delete pod gpu-nvidia-smi-test-${{ github.run_id }} --ignore-not-found=true
-
-  vllm-inference-deployment-test:
-    needs: [vllm-gpu-infrastructure-test]
+  vllm-regression-test:
+    needs: [vllm-gpu-smoke-test]
     if: success()
     runs-on: arc-runner-set
     concurrency:
-      group: ${{ github.workflow }}-vllm-inference-deployment-test-${{ github.event.pull_request.number }}
+      group: ${{ github.workflow }}-vllm-regression-test-${{ github.event.pull_request.number }}
       cancel-in-progress: true
     timeout-minutes: 60
+    container:
+      image: ${{ env.VLLM_DLC_IMAGE }}
+      options: --gpus all
     steps:
       - name: Checkout DLC source
         uses: actions/checkout@v5
 
-      - name: Deploy vLLM Inference Service
-        run: |
-          cat <<EOF | kubectl apply -f -
-          apiVersion: apps/v1
-          kind: Deployment
-          metadata:
-            name: vllm-inference-test-${{ github.run_id }}
-          spec:
-            replicas: 1
-            selector:
-              matchLabels:
-                app: vllm-inference-test-${{ github.run_id }}
-            template:
-              metadata:
-                labels:
-                  app: vllm-inference-test-${{ github.run_id }}
-              spec:
-                tolerations:
-                - key: "nvidia.com/gpu"
-                  operator: "Exists"
-                  effect: "NoSchedule"
-                containers:
-                - name: vllm-inference
-                  image: ${{ env.VLLM_DLC_IMAGE }}
-                  ports:
-                  - containerPort: 8000
-                  args:
-                  - "--model=facebook/opt-125m"
-                  - "--host=0.0.0.0"
-                  - "--port=8000"
-                  - "--tensor-parallel-size=1"
-                  - "--gpu-memory-utilization=0.9"
-                  - "--max-model-len=2048"
-                  - "--max-num-seqs=4"
-                  readinessProbe:
-                    httpGet:
-                      path: /health
-                      port: 8000
-                    initialDelaySeconds: 60
-                    periodSeconds: 10
-                    timeoutSeconds: 10
-                  resources:
-                    limits:
-                      nvidia.com/gpu: 1
-                    requests:
-                      memory: "24Gi"
-                      cpu: "4"
-                      ephemeral-storage: "25Gi"
-          ---
-          apiVersion: v1
-          kind: Service
-          metadata:
-            name: vllm-inference-svc-${{ github.run_id }}
-          spec:
-            type: ClusterIP
-            ports:
-              - port: 8000
-                targetPort: 8000
-                protocol: TCP
-            selector:
-              app: vllm-inference-test-${{ github.run_id }}
-          EOF
+      - name: Checkout vLLM tests
+        uses: actions/checkout@v5
+        with:
+          repository: vllm-project/vllm
+          ref: v${{ env.VLLM_VERSION }}
+          path: vllm_source
 
-      - name: Wait for vLLM deployment to be ready
+      - name: Setup environment
         run: |
-          kubectl wait --for=condition=available --timeout=600s deployment/vllm-inference-test-${{ github.run_id }}
+          echo "Setting up test environment..."
+          export HF_TOKEN=${{ secrets.HUGGING_FACE_HUB_TOKEN }}
+          echo "HF_TOKEN is set: $([ -n "$HF_TOKEN" ] && echo 'yes' || echo 'no')"
 
-      - name: Test vLLM inference endpoint
+      - name: Run vLLM setup script
         run: |
-          # Port forward to access the service
-          kubectl port-forward service/vllm-inference-svc-${{ github.run_id }} 8000:8000 &
-          PORT_FORWARD_PID=$!
-          
-          # Wait for port forward to be ready
-          sleep 10
-          
-          # Test models endpoint
-          echo "Testing /v1/models endpoint..."
-          curl -X GET "http://localhost:8000/v1/models" -H "Content-Type: application/json"
-          
-          # Test completions endpoint
-          echo "Testing /v1/completions endpoint..."
-          curl -X POST "http://localhost:8000/v1/completions" \
-            -H "Content-Type: application/json" \
-            -d '{
-              "model": "facebook/opt-125m",
-              "prompt": "The capital of France is",
-              "max_tokens": 50,
-              "temperature": 0.7
-            }'
-          
-          # Cleanup port forward
-          kill $PORT_FORWARD_PID || true
+          chmod +x scripts/vllm/vllm_0_13_0_test_setup.sh
+          scripts/vllm/vllm_0_13_0_test_setup.sh
+        env:
+          HF_TOKEN: ${{ secrets.HUGGING_FACE_HUB_TOKEN }}
 
-      - name: Cleanup vLLM deployment
-        if: always()
+      - name: Run vLLM regression tests
         run: |
-          kubectl delete deployment vllm-inference-test-${{ github.run_id }} --ignore-not-found=true
-          kubectl delete service vllm-inference-svc-${{ github.run_id }} --ignore-not-found=true
+          chmod +x scripts/vllm/vllm_regression_test.sh
+          scripts/vllm/vllm_regression_test.sh
+        env:
+          HF_TOKEN: ${{ secrets.HUGGING_FACE_HUB_TOKEN }}
 
-  vllm-performance-test:
-    needs: [vllm-inference-deployment-test]
+  vllm-cuda-test:
+    needs: [vllm-gpu-smoke-test]
     if: success()
     runs-on: arc-runner-set
     concurrency:
-      group: ${{ github.workflow }}-vllm-performance-test-${{ github.event.pull_request.number }}
+      group: ${{ github.workflow }}-vllm-cuda-test-${{ github.event.pull_request.number }}
       cancel-in-progress: true
-    timeout-minutes: 45
+    timeout-minutes: 60
+    container:
+      image: ${{ env.VLLM_DLC_IMAGE }}
+      options: --gpus all
     steps:
       - name: Checkout DLC source
         uses: actions/checkout@v5
 
-      - name: Deploy optimized vLLM configuration
-        run: |
-          cat <<EOF | kubectl apply -f -
-          apiVersion: apps/v1
-          kind: Deployment
-          metadata:
-            name: vllm-perf-test-${{ github.run_id }}
-          spec:
-            replicas: 1
-            selector:
-              matchLabels:
-                app: vllm-perf-test-${{ github.run_id }}
-            template:
-              metadata:
-                labels:
-                  app: vllm-perf-test-${{ github.run_id }}
-              spec:
-                tolerations:
-                - key: "nvidia.com/gpu"
-                  operator: "Exists"
-                  effect: "NoSchedule"
-                containers:
-                - name: vllm-inference
-                  image: ${{ env.VLLM_DLC_IMAGE }}
-                  ports:
-                  - containerPort: 8000
-                  args:
-                  - "--model=facebook/opt-125m"
-                  - "--host=0.0.0.0"
-                  - "--port=8000"
-                  - "--tensor-parallel-size=1"
-                  - "--gpu-memory-utilization=0.92"
-                  - "--max-model-len=1024"
-                  - "--max-num-seqs=8"
-                  readinessProbe:
-                    httpGet:
-                      path: /health
-                      port: 8000
-                    initialDelaySeconds: 60
-                    periodSeconds: 10
-                    timeoutSeconds: 10
-                  resources:
-                    limits:
-                      nvidia.com/gpu: 1
-                    requests:
-                      memory: "24Gi"
-                      cpu: "4"
-                      ephemeral-storage: "25Gi"
-          ---
-          apiVersion: v1
-          kind: Service
-          metadata:
-            name: vllm-perf-svc-${{ github.run_id }}
-          spec:
-            type: ClusterIP
-            ports:
-              - port: 8000
-                targetPort: 8000
-                protocol: TCP
-            selector:
-              app: vllm-perf-test-${{ github.run_id }}
-          EOF
+      - name: Checkout vLLM tests
+        uses: actions/checkout@v5
+        with:
+          repository: vllm-project/vllm
+          ref: v${{ env.VLLM_VERSION }}
+          path: vllm_source
 
-      - name: Wait for optimized vLLM deployment
+      - name: Run vLLM setup script
         run: |
-          kubectl wait --for=condition=available --timeout=600s deployment/vllm-perf-test-${{ github.run_id }}
+          chmod +x scripts/vllm/vllm_0_13_0_test_setup.sh
+          scripts/vllm/vllm_0_13_0_test_setup.sh
+        env:
+          HF_TOKEN: ${{ secrets.HUGGING_FACE_HUB_TOKEN }}
 
-      - name: Run performance tests
+      - name: Run vLLM CUDA tests
         run: |
-          # Port forward to access the service
-          kubectl port-forward service/vllm-perf-svc-${{ github.run_id }} 8001:8000 &
-          PORT_FORWARD_PID=$!
-          
-          # Wait for port forward to be ready
-          sleep 10
-          
-          # Run multiple concurrent requests to test performance
-          echo "Running concurrent performance tests..."
-          for i in {1..5}; do
-            curl -X POST "http://localhost:8001/v1/completions" \
-              -H "Content-Type: application/json" \
-              -d '{
-                "model": "facebook/opt-125m",
-                "prompt": "Explain artificial intelligence in simple terms:",
-                "max_tokens": 100,
-                "temperature": 0.7
-              }' &
-          done
-          
-          # Wait for all background jobs to complete
-          wait
-          
-          # Cleanup port forward
-          kill $PORT_FORWARD_PID || true
+          chmod +x scripts/vllm/vllm_cuda_test.sh
+          scripts/vllm/vllm_cuda_test.sh
+        env:
+          HF_TOKEN: ${{ secrets.HUGGING_FACE_HUB_TOKEN }}
 
-      - name: Cleanup performance test deployment
-        if: always()
+  vllm-examples-test:
+    needs: [vllm-gpu-smoke-test]
+    if: success()
+    runs-on: arc-runner-set
+    concurrency:
+      group: ${{ github.workflow }}-vllm-examples-test-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+    timeout-minutes: 60
+    container:
+      image: ${{ env.VLLM_DLC_IMAGE }}
+      options: --gpus all
+    steps:
+      - name: Checkout DLC source
+        uses: actions/checkout@v5
+
+      - name: Checkout vLLM tests
+        uses: actions/checkout@v5
+        with:
+          repository: vllm-project/vllm
+          ref: v${{ env.VLLM_VERSION }}
+          path: vllm_source
+
+      - name: Run vLLM setup script
         run: |
-          kubectl delete deployment vllm-perf-test-${{ github.run_id }} --ignore-not-found=true
-          kubectl delete service vllm-perf-svc-${{ github.run_id }} --ignore-not-found=true
+          chmod +x scripts/vllm/vllm_0_13_0_test_setup.sh
+          scripts/vllm/vllm_0_13_0_test_setup.sh
+        env:
+          HF_TOKEN: ${{ secrets.HUGGING_FACE_HUB_TOKEN }}
+
+      - name: Run vLLM examples tests
+        run: |
+          chmod +x scripts/vllm/vllm_ec2_examples_test.sh
+          scripts/vllm/vllm_ec2_examples_test.sh
+        env:
+          HF_TOKEN: ${{ secrets.HUGGING_FACE_HUB_TOKEN }}
