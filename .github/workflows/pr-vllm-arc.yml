@@ -94,6 +94,10 @@ jobs:
           echo "=== System Information ==="
           uname -a
           echo ""
+          echo "=== Docker Setup ==="
+          # Ensure Docker socket permissions
+          sudo chmod 666 /var/run/docker.sock || echo "Could not change Docker socket permissions"
+          echo ""
           echo "=== GPU Check ==="
           nvidia-smi || echo "nvidia-smi not available"
           echo ""
