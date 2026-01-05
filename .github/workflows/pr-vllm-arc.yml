@@ -115,7 +115,7 @@ jobs:
       cancel-in-progress: true
     timeout-minutes: 60
     container:
-      image: ${{ env.VLLM_DLC_IMAGE }}
+      image: public.ecr.aws/deep-learning-containers/vllm:0.13.0-gpu-py312-ec2
       options: --gpus all
     steps:
       - name: Checkout DLC source
@@ -157,7 +157,7 @@ jobs:
       cancel-in-progress: true
     timeout-minutes: 60
     container:
-      image: ${{ env.VLLM_DLC_IMAGE }}
+      image: public.ecr.aws/deep-learning-containers/vllm:0.13.0-gpu-py312-ec2
       options: --gpus all
     steps:
       - name: Checkout DLC source
@@ -193,7 +193,7 @@ jobs:
       cancel-in-progress: true
     timeout-minutes: 60
     container:
-      image: ${{ env.VLLM_DLC_IMAGE }}
+      image: public.ecr.aws/deep-learning-containers/vllm:0.13.0-gpu-py312-ec2
       options: --gpus all
     steps:
       - name: Checkout DLC source
