@@ -92,7 +92,7 @@ jobs:
       - name: Build Docker image
         id: build
         env:
-          IMAGE_TAG: ${{ env.FRAMEWORK }}-${{ env.VLLM_VERSION }}-gpu-${{ env.PYTHON_VERSION }}-${{ env.CUDA_VERSION }}-${{ env.OS_VERSION }}-ec2-pr-${{ github.event.pull_request.number }}
+          IMAGE_TAG: vllm-image-test
         run: |
           # Build the Docker image
           docker build \
