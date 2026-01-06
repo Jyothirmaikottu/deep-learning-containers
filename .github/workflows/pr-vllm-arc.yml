@@ -111,21 +111,11 @@ jobs:
           # Set output for downstream jobs
           echo "image-tag=${IMAGE_TAG}" >> $GITHUB_OUTPUT
 
-  vllm-gpu-smoke-test:
-    needs: [build-vllm-ec2-image, check-changes]
-    if: |
-      always() && !failure() && !cancelled() &&
-      (needs.check-changes.outputs.build-change == 'true' || needs.check-changes.outputs.test-change == 'true')
-    runs-on: arc-runner-set
-    concurrency:
-      group: ${{ github.workflow }}-vllm-gpu-smoke-test-${{ github.event.pull_request.number }}
-      cancel-in-progress: true
-    timeout-minutes: 15
-    steps:
       - name: Test with built image
         run: |
           docker run --rm --gpus all \
             ${{ needs.build-vllm-ec2-image.outputs.ci-image }} \
             python3 -c "import vllm; print(vllm.__version__)"
             
- 
+
+
