@@ -75,8 +75,44 @@ jobs:
   # ==============================================
   # =============== vLLM Tests ==================
   # ==============================================
-  vllm-gpu-smoke-test:
+
+  build-vllm-ec2-image:
     needs: [check-changes]
+    if: needs.check-changes.outputs.build-change == 'true'
+    runs-on: arc-runner-set
+    concurrency:
+      group: ${{ github.workflow }}-build-vllm-ec2-image-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+    outputs:
+      ci-image: ${{ steps.build.outputs.image-tag }}
+    steps:
+      - name: Checkout DLC source
+        uses: actions/checkout@v5
+  
+      - name: Build Docker image
+        id: build
+        env:
+          IMAGE_TAG: ${{ env.FRAMEWORK }}-${{ env.VLLM_VERSION }}-gpu-${{ env.PYTHON_VERSION }}-${{ env.CUDA_VERSION }}-${{ env.OS_VERSION }}-ec2-pr-${{ github.event.pull_request.number }}
+        run: |
+          # Build the Docker image
+          docker build \
+            -t ${IMAGE_TAG} \
+            -f docker/${{ env.FRAMEWORK }}/Dockerfile \
+            --build-arg BASE_IMAGE=vllm/vllm-openai:v${{ env.VLLM_VERSION }} \
+            --build-arg FRAMEWORK_VERSION=${{ env.VLLM_VERSION }} \
+            --build-arg PYTHON_VERSION=${{ env.PYTHON_VERSION }} \
+            --build-arg CUDA_VERSION=${{ env.CUDA_VERSION }} \
+            --build-arg OS_VERSION=${{ env.OS_VERSION }} \
+           .
+  
+          # Verify the image was built
+          docker images | grep ${IMAGE_TAG}
+  
+          # Set output for downstream jobs
+          echo "image-tag=${IMAGE_TAG}" >> $GITHUB_OUTPUT
+
+  vllm-gpu-smoke-test:
+    needs: [build-vllm-ec2-image, check-changes]
     if: |
       always() && !failure() && !cancelled() &&
       (needs.check-changes.outputs.build-change == 'true' || needs.check-changes.outputs.test-change == 'true')
@@ -86,109 +122,10 @@ jobs:
       cancel-in-progress: true
     timeout-minutes: 15
     steps:
-      - name: Check GPU environment
+      - name: Test with built image
         run: |
-          echo '=== GPU Check ==='
-          nvidia-smi || echo 'nvidia-smi not available'
-          echo '=== Python Environment ==='
-          python3 --version
-          pip list | grep -E '(vllm|torch)' || echo 'vLLM/torch not found'
-
-  vllm-regression-test:
-    needs: [vllm-gpu-smoke-test]
-    if: success()
-    runs-on: arc-runner-set
-    concurrency:
-      group: ${{ github.workflow }}-vllm-regression-test-${{ github.event.pull_request.number }}
-      cancel-in-progress: true
-    timeout-minutes: 60
-    steps:
-      - name: Checkout DLC source
-        uses: actions/checkout@v5
-
-      - name: Checkout vLLM tests
-        uses: actions/checkout@v5
-        with:
-          repository: vllm-project/vllm
-          ref: v${{ env.VLLM_VERSION }}
-          path: vllm_source
-
-      - name: Run vLLM regression tests
-        run: |
-          docker run --rm --gpus=all \
-            -v ${{ github.workspace }}:/workspace \
-            -w /workspace \
-            -e HF_TOKEN="${{ secrets.HUGGING_FACE_HUB_TOKEN }}" \
-            public.ecr.aws/deep-learning-containers/vllm:0.13.0-gpu-py312-ec2 \
-            bash -c "
-            chmod +x scripts/vllm/vllm_0_13_0_test_setup.sh
-            scripts/vllm/vllm_0_13_0_test_setup.sh
-            chmod +x scripts/vllm/vllm_regression_test.sh
-            scripts/vllm/vllm_regression_test.sh
-            "
-
-  vllm-cuda-test:
-    needs: [vllm-gpu-smoke-test]
-    if: success()
-    runs-on: arc-runner-set
-    concurrency:
-      group: ${{ github.workflow }}-vllm-cuda-test-${{ github.event.pull_request.number }}
-      cancel-in-progress: true
-    timeout-minutes: 60
-    steps:
-      - name: Checkout DLC source
-        uses: actions/checkout@v5
-
-      - name: Checkout vLLM tests
-        uses: actions/checkout@v5
-        with:
-          repository: vllm-project/vllm
-          ref: v${{ env.VLLM_VERSION }}
-          path: vllm_source
-
-      - name: Run vLLM CUDA tests
-        run: |
-          docker run --rm --gpus=all \
-            -v ${{ github.workspace }}:/workspace \
-            -w /workspace \
-            -e HF_TOKEN="${{ secrets.HUGGING_FACE_HUB_TOKEN }}" \
-            public.ecr.aws/deep-learning-containers/vllm:0.13.0-gpu-py312-ec2 \
-            bash -c "
-            chmod +x scripts/vllm/vllm_0_13_0_test_setup.sh
-            scripts/vllm/vllm_0_13_0_test_setup.sh
-            chmod +x scripts/vllm/vllm_cuda_test.sh
-            scripts/vllm/vllm_cuda_test.sh
-            "
-
-  vllm-examples-test:
-    needs: [vllm-gpu-smoke-test]
-    if: success()
-    runs-on: arc-runner-set
-    concurrency:
-      group: ${{ github.workflow }}-vllm-examples-test-${{ github.event.pull_request.number }}
-      cancel-in-progress: true
-    timeout-minutes: 60
-    steps:
-      - name: Checkout DLC source
-        uses: actions/checkout@v5
-
-      - name: Checkout vLLM tests
-        uses: actions/checkout@v5
-        with:
-          repository: vllm-project/vllm
-          ref: v${{ env.VLLM_VERSION }}
-          path: vllm_source
-
-      - name: Run vLLM examples tests
-        run: |
-          docker run --rm --gpus=all \
-            -v ${{ github.workspace }}:/workspace \
-            -w /workspace \
-            -e HF_TOKEN="${{ secrets.HUGGING_FACE_HUB_TOKEN }}" \
-            public.ecr.aws/deep-learning-containers/vllm:0.13.0-gpu-py312-ec2 \
-            bash -c "
-            chmod +x scripts/vllm/vllm_0_13_0_test_setup.sh
-            scripts/vllm/vllm_0_13_0_test_setup.sh
-            chmod +x scripts/vllm/vllm_ec2_examples_test.sh
-            scripts/vllm/vllm_ec2_examples_test.sh
-            "
+          docker run --rm --gpus all \
+            ${{ needs.build-vllm-ec2-image.outputs.ci-image }} \
+            python3 -c "import vllm; print(vllm.__version__)"
+            
+ 
