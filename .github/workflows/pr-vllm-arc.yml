@@ -85,20 +85,27 @@ jobs:
       group: ${{ github.workflow }}-vllm-gpu-smoke-test-${{ github.event.pull_request.number }}
       cancel-in-progress: true
     timeout-minutes: 15
+  
+    # Run the job directly in a container
+    container:
+      image: public.ecr.aws/deep-learning-containers/vllm:0.13.0-gpu-py312-ec2
+      options: --gpus all
+  
     steps:
       - name: Checkout DLC source
         uses: actions/checkout@v5
-
-      - name: Check runner environment
+  
+      - name: Check GPU environment
         run: |
-            echo '=== GPU Check ==='
-            nvidia-smi || echo 'nvidia-smi not available'
-            docker run --rm --gpus all public.ecr.aws/deep-learning-containers/vllm:0.13.0-gpu-py312-ec2
-
-      - name: Test DLC container
+          echo '=== GPU Check ==='
+          nvidia-smi || echo 'nvidia-smi not available'
+          echo '=== Python Environment ==='
+          python3 --version
+          pip list | grep -E '(vllm|torch)' || echo 'vLLM/torch not found'
+  
+      - name: Test vLLM imports and CUDA
         run: |
-          docker run --rm --gpus all public.ecr.aws/deep-learning-containers/vllm:0.13.0-gpu-py312-ec2 \
-          bash -c "python3 -c "
+          python3 -c "
           import vllm
           import torch
           print('vLLM imported successfully')
@@ -110,7 +117,7 @@ jobs:
               print(f'GPU name: {torch.cuda.get_device_name()}')
           else:
               print('No CUDA GPUs available')
-          ""
+          "
 
   vllm-regression-test:
     needs: [vllm-gpu-smoke-test]
