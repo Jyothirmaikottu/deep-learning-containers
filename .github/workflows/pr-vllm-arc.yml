@@ -97,9 +97,9 @@ jobs:
             -v ${{ github.workspace }}:/workspace \
             -w /workspace \
             public.ecr.aws/deep-learning-containers/vllm:0.13.0-gpu-py312-ec2 \
-            bash -c 'echo '=== Python Environment ==='
+            bash -c "echo '=== Python Environment ==='
             python3 --version
-            pip list | grep -E '(vllm|torch)' || echo 'vLLM/torch not found''
+            pip list | grep -E '(vllm|torch)' || echo 'vLLM/torch not found'"
             "
 
       - name: Test DLC container
@@ -109,7 +109,7 @@ jobs:
             -w /workspace \
             -e HF_TOKEN="${{ secrets.HUGGING_FACE_HUB_TOKEN }}" \
             public.ecr.aws/deep-learning-containers/vllm:0.13.0-gpu-py312-ec2 \
-            bash -c 'python3 -c "
+            bash -c "python3 -c "
           import vllm
           import torch
           print('vLLM imported successfully')
@@ -121,7 +121,7 @@ jobs:
               print(f'GPU name: {torch.cuda.get_device_name()}')
           else:
               print('No CUDA GPUs available')
-          "'
+          ""
 
   vllm-regression-test:
     needs: [vllm-gpu-smoke-test]
@@ -177,7 +177,7 @@ jobs:
 
       - name: Run vLLM CUDA tests
         run: |
-          docker run --rm --gpus all \
+          docker run --rm --gpus=all \
             -v ${{ github.workspace }}:/workspace \
             -w /workspace \
             -e HF_TOKEN="${{ secrets.HUGGING_FACE_HUB_TOKEN }}" \
@@ -210,7 +210,7 @@ jobs:
 
       - name: Run vLLM examples tests
         run: |
-          docker run --rm --gpus all \
+          docker run --rm --gpus=all \
             -v ${{ github.workspace }}:/workspace \
             -w /workspace \
             -e HF_TOKEN="${{ secrets.HUGGING_FACE_HUB_TOKEN }}" \
