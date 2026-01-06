@@ -93,23 +93,12 @@ jobs:
         run: |
             echo '=== GPU Check ==='
             nvidia-smi || echo 'nvidia-smi not available'
-            docker run --rm --gpus=all \
-            -v ${{ github.workspace }}:/workspace \
-            -w /workspace \
-            public.ecr.aws/deep-learning-containers/vllm:0.13.0-gpu-py312-ec2 \
-            bash -c "echo '=== Python Environment ==='
-            python3 --version
-            pip list | grep -E '(vllm|torch)' || echo 'vLLM/torch not found'"
-            "
+            docker run --rm --gpus all public.ecr.aws/deep-learning-containers/vllm:0.13.0-gpu-py312-ec2
 
       - name: Test DLC container
         run: |
-          docker run --rm --gpus=all \
-            -v ${{ github.workspace }}:/workspace \
-            -w /workspace \
-            -e HF_TOKEN="${{ secrets.HUGGING_FACE_HUB_TOKEN }}" \
-            public.ecr.aws/deep-learning-containers/vllm:0.13.0-gpu-py312-ec2 \
-            bash -c "python3 -c "
+          docker run --rm --gpus all public.ecr.aws/deep-learning-containers/vllm:0.13.0-gpu-py312-ec2 \
+          bash -c "python3 -c "
           import vllm
           import torch
           print('vLLM imported successfully')
