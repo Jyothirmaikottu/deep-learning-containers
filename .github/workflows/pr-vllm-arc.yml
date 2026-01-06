@@ -91,17 +91,12 @@ jobs:
 
       - name: Check runner environment
         run: |
-          docker run --rm --gpus all \
+            echo '=== GPU Check ==='
+            nvidia-smi || echo 'nvidia-smi not available'
+            docker run --rm --gpus all \
             -v ${{ github.workspace }}:/workspace \
             -w /workspace \
             public.ecr.aws/deep-learning-containers/vllm:0.13.0-gpu-py312-ec2 \
-            bash -c "
-            echo '=== System Information ==='
-            uname -a
-            echo ''
-            echo '=== GPU Check ==='
-            nvidia-smi || echo 'nvidia-smi not available'
-            echo ''
             echo '=== Python Environment ==='
             python3 --version
             pip list | grep -E '(vllm|torch)' || echo 'vLLM/torch not found'
