@@ -115,7 +115,7 @@ jobs:
         run: |
           nvidia-smi 
           docker info | grep -i runtime
-          docker run --gpus all \
+          docker run --gpus all --privileged \
             public.ecr.aws/deep-learning-containers/vllm:0.13.0-gpu-py312-ec2
             
 
