@@ -79,7 +79,7 @@ jobs:
   build-vllm-ec2-image:
     needs: [check-changes]
     if: needs.check-changes.outputs.build-change == 'true'
-    runs-on: arc-runner-set
+    runs-on: vllm-runner
     concurrency:
       group: ${{ github.workflow }}-build-vllm-ec2-image-${{ github.event.pull_request.number }}
       cancel-in-progress: true
