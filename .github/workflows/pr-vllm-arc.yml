@@ -111,14 +111,15 @@ jobs:
       #     # Set output for downstream jobs
       #     echo "image-tag=${IMAGE_TAG}" >> $GITHUB_OUTPUT
 
-      - name: Test with built image
+      - name: Test setup
         run: |
           nvidia-smi 
           docker info | grep -i runtime
-          nvidia-ctk --version
-          ls -la /dev/nvidia*
-          groups $USER
 
+      - name: Run vLLM with GPU
+        run: |
+            docker run --gpus all \
+            public.ecr.aws/deep-learning-containers/vllm:0.13.0-gpu-py312-ec2 
 
             
 
