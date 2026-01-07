@@ -114,7 +114,9 @@ jobs:
       - name: Test with built image
         run: |
           nvidia-smi 
-          docker run --rm --gpus=all \
+          docker run --gpus all --runtime=nvidia \
+          -e NVIDIA_VISIBLE_DEVICES=all \
+          -e NVIDIA_DRIVER_CAPABILITIES=compute,utility \
             public.ecr.aws/deep-learning-containers/vllm:0.13.0-gpu-py312-ec2 \
             python3 -c "import vllm; print(vllm.__version__)"
             
