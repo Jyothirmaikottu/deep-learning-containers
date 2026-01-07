@@ -113,7 +113,8 @@ jobs:
 
       - name: Test with built image
         run: |
-          docker run --rm --gpus all runtime=nvidia \
+          nvidia-smi 
+          docker run --rm --gpus=all \
             public.ecr.aws/deep-learning-containers/vllm:0.13.0-gpu-py312-ec2 \
             python3 -c "import vllm; print(vllm.__version__)"
             
