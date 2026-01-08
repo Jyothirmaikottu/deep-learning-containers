@@ -1,4 +1,3 @@
-```yaml
 
 name: PR - vLLM EC2
 
@@ -151,5 +150,3 @@ jobs:
             docker stop ${CONTAINER_ID} || true
           fi
 
-
-```
