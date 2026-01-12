@@ -15,11 +15,11 @@ env:
   PYTHON_VERSION: "py312"
   CUDA_VERSION: "cu129"
   OS_VERSION: "ubuntu22.04"
-
+  
   # vLLM - Using AWS DLC public ECR image
   VLLM_VERSION: 0.13.0
   VLLM_DLC_IMAGE: public.ecr.aws/deep-learning-containers/vllm:0.13.0-gpu-py312-ec2
-
+  
   # CI environment configuration
   FORCE_COLOR: "1"
 
@@ -35,7 +35,7 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.base.sha }}
           fetch-depth: 1
-
+      
       - name: Run permission gate (from base)
         uses: ./.github/actions/pr-permission-gate
 
@@ -52,12 +52,12 @@ jobs:
     steps:
       - name: Checkout DLC source
         uses: actions/checkout@v5
-
+      
       - name: Setup python
         uses: actions/setup-python@v6
         with:
           python-version: "3.12"
-
+      
       - name: Detect file changes
         id: changes
         uses: dorny/paths-filter@v3
@@ -76,49 +76,184 @@ jobs:
   # =============== vLLM Tests ==================
   # ==============================================
 
-  build-vllm-ec2-image:
+  vllm-inference-test:
     needs: [check-changes]
-    if: needs.check-changes.outputs.build-change == 'true'
+    if: needs.check-changes.outputs.test-change == 'true'
     runs-on: vllm-runner
     concurrency:
-      group: ${{ github.workflow }}-build-vllm-ec2-image-${{ github.event.pull_request.number }}
+      group: ${{ github.workflow }}-vllm-inference-${{ github.event.pull_request.number }}
       cancel-in-progress: true
-    outputs:
-      ci-image: ${{ steps.build.outputs.image-tag }}
     steps:
       - name: Checkout DLC source
         uses: actions/checkout@v5
-  
-      # - name: Build Docker image
-      #   id: build
-      #   env:
-      #     IMAGE_TAG: vllm-image-test
-      #   run: |
-      #     # Build the Docker image
-      #     docker build \
-      #       -t ${IMAGE_TAG} \
-      #       -f docker/${{ env.FRAMEWORK }}/Dockerfile \
-      #       --build-arg BASE_IMAGE=vllm/vllm-openai:v${{ env.VLLM_VERSION }} \
-      #       --build-arg FRAMEWORK_VERSION=${{ env.VLLM_VERSION }} \
-      #       --build-arg PYTHON_VERSION=${{ env.PYTHON_VERSION }} \
-      #       --build-arg CUDA_VERSION=${{ env.CUDA_VERSION }} \
-      #       --build-arg OS_VERSION=${{ env.OS_VERSION }} \
-      #      .
-  
-      #     # Verify the image was built
-      #     docker images | grep ${IMAGE_TAG}
-  
-      #     # Set output for downstream jobs
-      #     echo "image-tag=${IMAGE_TAG}" >> $GITHUB_OUTPUT
-
-      - name: Test setup
+      
+      - name: Verify GPU availability
         run: |
-          docker info | grep -i runtime
-
-      - name: Run vLLM with GPU
+          echo "=== GPU Information ==="
+          nvidia-smi
+          echo ""
+          echo "=== Docker GPU Runtime ==="
+          docker run --rm --gpus all nvidia/cuda:11.8-base-ubuntu20.04 nvidia-smi
+      
+      - name: Test vLLM container startup
         run: |
-            docker run --gpus all public.ecr.aws/deep-learning-containers/vllm:0.13.0-gpu-py312-ec2 
-
-            
-
-
+          echo "=== Testing vLLM container startup ==="
+          docker run --rm --gpus all \
+            ${{ env.VLLM_DLC_IMAGE }} \
+            python -c "import vllm; print(f'vLLM version: {vllm.__version__}')"
+      
+      - name: Run vLLM inference test with small model
+        run: |
+          echo "=== Running vLLM inference test ==="
+          docker run --rm --gpus all \
+            -v /tmp:/tmp \
+            ${{ env.VLLM_DLC_IMAGE }} \
+            python -c "
+          import torch
+          from vllm import LLM, SamplingParams
+          
+          print('=== System Information ===')
+          print(f'PyTorch version: {torch.__version__}')
+          print(f'CUDA available: {torch.cuda.is_available()}')
+          print(f'GPU count: {torch.cuda.device_count()}')
+          if torch.cuda.is_available():
+              print(f'GPU name: {torch.cuda.get_device_name(0)}')
+              print(f'GPU memory: {torch.cuda.get_device_properties(0).total_memory / 1e9:.1f} GB')
+          
+          print('\n=== vLLM Inference Test ===')
+          
+          # Use a small model for testing
+          model_name = 'facebook/opt-125m'
+          
+          # Create LLM instance
+          llm = LLM(
+              model=model_name,
+              tensor_parallel_size=1,
+              gpu_memory_utilization=0.3,
+              max_model_len=512
+          )
+          
+          # Test prompts
+          prompts = [
+              'The capital of France is',
+              'Machine learning is',
+              'The future of AI will be'
+          ]
+          
+          # Sampling parameters
+          sampling_params = SamplingParams(
+              temperature=0.7,
+              top_p=0.9,
+              max_tokens=50
+          )
+          
+          # Generate responses
+          print('Generating responses...')
+          outputs = llm.generate(prompts, sampling_params)
+          
+          # Print results
+          for i, output in enumerate(outputs):
+              prompt = output.prompt
+              generated_text = output.outputs[0].text
+              print(f'\nPrompt {i+1}: {prompt}')
+              print(f'Generated: {generated_text.strip()}')
+          
+          print('\n=== Test completed successfully! ===')
+          "
+      
+      - name: Test vLLM OpenAI API compatibility
+        run: |
+          echo "=== Testing vLLM OpenAI API server ==="
+          
+          # Start vLLM server in background
+          docker run -d --name vllm-server --gpus all \
+            -p 8000:8000 \
+            ${{ env.VLLM_DLC_IMAGE }} \
+            python -m vllm.entrypoints.openai.api_server \
+            --model facebook/opt-125m \
+            --tensor-parallel-size 1 \
+            --gpu-memory-utilization 0.3 \
+            --max-model-len 512 \
+            --host 0.0.0.0 \
+            --port 8000
+          
+          # Wait for server to start
+          echo "Waiting for vLLM server to start..."
+          sleep 30
+          
+          # Check server health
+          for i in {1..10}; do
+            if curl -f http://localhost:8000/health; then
+              echo "Server is healthy!"
+              break
+            fi
+            echo "Attempt $i: Server not ready, waiting..."
+            sleep 10
+          done
+          
+          # Test API endpoint
+          echo "Testing OpenAI API compatibility..."
+          curl -X POST http://localhost:8000/v1/completions \
+            -H "Content-Type: application/json" \
+            -d '{
+              "model": "facebook/opt-125m",
+              "prompt": "The capital of France is",
+              "max_tokens": 50,
+              "temperature": 0.7
+            }' | jq .
+          
+          # Cleanup
+          docker stop vllm-server
+          docker rm vllm-server
+      
+      - name: Performance benchmark
+        run: |
+          echo "=== Running performance benchmark ==="
+          docker run --rm --gpus all \
+            ${{ env.VLLM_DLC_IMAGE }} \
+            python -c "
+          import time
+          from vllm import LLM, SamplingParams
+          
+          print('=== Performance Benchmark ===')
+          
+          # Initialize model
+          start_time = time.time()
+          llm = LLM(
+              model='facebook/opt-125m',
+              tensor_parallel_size=1,
+              gpu_memory_utilization=0.3,
+              max_model_len=512
+          )
+          init_time = time.time() - start_time
+          print(f'Model initialization time: {init_time:.2f} seconds')
+          
+          # Benchmark inference
+          prompts = ['The quick brown fox'] * 10
+          sampling_params = SamplingParams(max_tokens=50, temperature=0.0)
+          
+          start_time = time.time()
+          outputs = llm.generate(prompts, sampling_params)
+          inference_time = time.time() - start_time
+          
+          total_tokens = sum(len(output.outputs[0].token_ids) for output in outputs)
+          throughput = total_tokens / inference_time
+          
+          print(f'Inference time: {inference_time:.2f} seconds')
+          print(f'Total tokens generated: {total_tokens}')
+          print(f'Throughput: {throughput:.2f} tokens/second')
+          print('=== Benchmark completed ===')
+          "
+      
+      - name: Cleanup
+        if: always()
+        run: |
+          echo "=== Cleanup ==="
+          # Stop any running containers
+          docker ps -q --filter ancestor=${{ env.VLLM_DLC_IMAGE }} | xargs -r docker stop
+          docker ps -aq --filter ancestor=${{ env.VLLM_DLC_IMAGE }} | xargs -r docker rm
+          
+          # Clean up any leftover processes
+          docker system prune -f
+          
+          echo "Cleanup completed"
