@@ -79,7 +79,7 @@ jobs:
   vllm-inference-test:
     needs: [check-changes]
     if: needs.check-changes.outputs.test-change == 'true'
-    runs-on: vllm-runner
+    runs-on: vllm-runners
     concurrency:
       group: ${{ github.workflow }}-vllm-inference-${{ github.event.pull_request.number }}
       cancel-in-progress: true
