@@ -33,8 +33,7 @@ jobs:
             public.ecr.aws/deep-learning-containers/vllm:0.13.0-gpu-py312-ec2 \
             vllm serve meta-llama/Llama-3.2-1B-Instruct \
             --host 0.0.0.0 \
-            --port 8000 \
-            --tensor-parallel-size 4)
+            --port 8000 )
           echo "CONTAINER_ID=$CONTAINER_ID" >> $GITHUB_ENV
 
       - name: Verify GPU allocation for job ${{ matrix.job_id }}
@@ -47,7 +46,7 @@ jobs:
         run: |
           # Wait for vLLM server
           docker exec ${CONTAINER_ID} bash -c "
-            timeout 180 bash -c 'until curl -s http://localhost:8000/health > /dev/null; do
+            timeout 400 bash -c 'until curl -s http://localhost:8000/health > /dev/null; do
               echo \"Waiting for vLLM server...\";
               sleep 5;
             done'
