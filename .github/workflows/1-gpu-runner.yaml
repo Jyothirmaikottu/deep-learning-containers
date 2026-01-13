@@ -1,17 +1,16 @@
-name: Test - 1 GPU 
+name: Test - 8 GPUs Parallel
 
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - ".github/workflows/1-gpu-runner.yaml"
 
 jobs:
-  single-gpu-validation:
+  multi-gpu-validation:
     runs-on: gpu-1gpu-runner
-    concurrency:
-      group: ${{ github.workflow }}-single-gpu-${{ github.run_number }}
-      cancel-in-progress: false
+    strategy:
+      matrix:
+        gpu_id: [0, 1, 2, 3, 4, 5, 6, 7]
+      max-parallel: 8
+      fail-fast: false  # Continue other jobs even if one fails
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
@@ -20,49 +19,62 @@ jobs:
         run: |
           docker pull public.ecr.aws/deep-learning-containers/vllm:0.13.0-gpu-py312-ec2
 
-      - name: Start vLLM container with GPU
+      - name: Start vLLM container on GPU ${{ matrix.gpu_id }}
         run: |
           CONTAINER_ID=$(docker run -d --rm --gpus=all \
             -v ${HOME}/.cache/huggingface:/root/.cache/huggingface \
             -e HF_TOKEN=${{ secrets.HUGGING_FACE_HUB_TOKEN }} \
             -v .:/workdir --workdir /workdir \
-            -p 8000:8000 \
+            -p $((8000 + ${{ matrix.gpu_id }})):8000 \
             public.ecr.aws/deep-learning-containers/vllm:0.13.0-gpu-py312-ec2 \
             vllm serve meta-llama/Llama-3.2-1B-Instruct \
             --host 0.0.0.0 \
             --port 8000)
           echo "CONTAINER_ID=$CONTAINER_ID" >> $GITHUB_ENV
 
-      - name: Verify GPU allocation
+      - name: Verify GPU allocation for job ${{ matrix.gpu_id }}
         run: |
-          # Check what the container runtime sees
-          docker exec ${CONTAINER_ID} bash -c 'echo $CUDA_VISIBLE_DEVICES'
-      
-          # Run a GPU workload and check which GPU is active
-          docker exec ${CONTAINER_ID} nvidia-smi --query-compute-apps=pid,used_gpu_memory --format=csv
-      
-          # Count available GPUs from CUDA perspective
+          echo "=== Job ${{ matrix.gpu_id }} GPU Info ==="
+          docker exec ${CONTAINER_ID} nvidia-smi --query-gpu=index,name,utilization.gpu,memory.used --format=csv
           docker exec ${CONTAINER_ID} python -c "import torch; print(f'Torch sees {torch.cuda.device_count()} GPU(s)')"
 
-          
-      - name: Test vLLM API endpoint
+      - name: Run inference test on GPU ${{ matrix.gpu_id }}
         run: |
+          # Wait for vLLM server
           docker exec ${CONTAINER_ID} bash -c "
-            timeout 60 bash -c 'until curl -s http://localhost:8000/health > /dev/null; do
+            timeout 120 bash -c 'until curl -s http://[IP_ADDRESS]:8000/health > /dev/null; do
               echo \"Waiting for vLLM server...\";
               sleep 2;
             done'
           "
-      
-          docker exec ${CONTAINER_ID} curl -f http://localhost:8000/health
-      
-          docker exec ${CONTAINER_ID} curl -f http://localhost:8000/v1/models
-      
-          docker exec ${CONTAINER_ID} curl -f http://localhost:8000/v1/completions \
+
+          # Test health endpoint
+          docker exec ${CONTAINER_ID} curl -f http://[IP_ADDRESS]:8000/health
+
+          # List available models
+          docker exec ${CONTAINER_ID} curl -f http://[IP_ADDRESS]:8000/v1/models
+
+          # Run inference
+          docker exec ${CONTAINER_ID} curl -f http://[IP_ADDRESS]:8000/v1/completions \
             -H "Content-Type: application/json" \
             -d '{
-              "model": "your-model-name",
-              "prompt": "Hello, world!",
-              "max_tokens": 10
+              "model": "meta-llama/Llama-3.2-1B-Instruct",
+              "prompt": "GPU ${{ matrix.gpu_id }} test: Hello, world!",
+              "max_tokens": 50
             }'
-          
+
+      - name: Keep container running for 2 minutes
+        run: |
+          echo "Keeping GPU ${{ matrix.gpu_id }} busy..."
+          sleep 120
+
+      - name: Show final GPU stats
+        if: always()
+        run: |
+          echo "=== Final GPU Stats for Job ${{ matrix.gpu_id }} ==="
+          docker exec ${CONTAINER_ID} nvidia-smi || true
+
+      - name: Cleanup container
+        if: always()
+        run: |
+          docker stop ${CONTAINER_ID} || true
