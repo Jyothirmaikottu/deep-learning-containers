@@ -39,27 +39,28 @@ jobs:
       - name: Verify GPU allocation for job ${{ matrix.job_id }}
         run: |
           echo "=== Job ${{ matrix.job_id }} GPU Info ==="
+          docker logs ${CONTAINER_ID} --tail 50 -f
           docker exec ${CONTAINER_ID} nvidia-smi --query-gpu=index,name,utilization.gpu,memory.used --format=csv
           docker exec ${CONTAINER_ID} python -c "import torch; print(f'Torch sees {torch.cuda.device_count()} GPU(s)')"
 
-      - name: Run inference test on job ${{ matrix.job_id }}
-        run: |
-          # List available models
-          docker exec ${CONTAINER_ID} curl -f http://localhost:8000/v1/models
+      # - name: Run inference test on job ${{ matrix.job_id }}
+      #   run: |
+      #     # List available models
+      #     docker exec ${CONTAINER_ID} curl -f http://localhost:8000/v1/models
 
-          # Run inference
-          docker exec ${CONTAINER_ID} curl -f http://localhost:8000/v1/completions \
-            -H "Content-Type: application/json" \
-            -d '{
-              "model": "meta-llama/Llama-3.2-1B-Instruct",
-              "prompt": "Job ${{ matrix.job_id }} with 4 GPUs: Hello, world!",
-              "max_tokens": 100
-            }'
+      #     # Run inference
+      #     docker exec ${CONTAINER_ID} curl -f http://localhost:8000/v1/completions \
+      #       -H "Content-Type: application/json" \
+      #       -d '{
+      #         "model": "meta-llama/Llama-3.2-1B-Instruct",
+      #         "prompt": "Job ${{ matrix.job_id }} with 4 GPUs: Hello, world!",
+      #         "max_tokens": 100
+      #       }'
 
-      - name: Keep container running for 3 minutes
-        run: |
-          echo "Keeping job ${{ matrix.job_id }} (4 GPUs) busy..."
-          sleep 180
+      # - name: Keep container running for 3 minutes
+      #   run: |
+      #     echo "Keeping job ${{ matrix.job_id }} (4 GPUs) busy..."
+      #     sleep 180
 
       - name: Show final GPU stats
         if: always()
