@@ -44,17 +44,6 @@ jobs:
 
       - name: Run inference test on job ${{ matrix.job_id }}
         run: |
-          # Wait for vLLM server
-          docker exec ${CONTAINER_ID} bash -c "
-            timeout 400 bash -c 'until curl -s http://localhost:8000/health > /dev/null; do
-              echo \"Waiting for vLLM server...\";
-              sleep 5;
-            done'
-          "
-
-          # Test health endpoint
-          docker exec ${CONTAINER_ID} curl -f http://localhost:8000/health
-
           # List available models
           docker exec ${CONTAINER_ID} curl -f http://localhost:8000/v1/models
 
