@@ -26,8 +26,11 @@ jobs:
             -v ${HOME}/.cache/huggingface:/root/.cache/huggingface \
             -e HF_TOKEN=${{ secrets.HUGGING_FACE_HUB_TOKEN }} \
             -v .:/workdir --workdir /workdir \
+            -p 8000:8000 \
             public.ecr.aws/deep-learning-containers/vllm:0.13.0-gpu-py312-ec2 \
-            sleep 300)
+            vllm serve meta-llama/Llama-3.2-1B-Instruct \
+            --host 0.0.0.0 \
+            --port 8000)
           echo "CONTAINER_ID=$CONTAINER_ID" >> $GITHUB_ENV
 
       - name: Test GPU access in container
@@ -35,9 +38,24 @@ jobs:
           docker exec ${CONTAINER_ID} nvidia-smi
           docker exec ${CONTAINER_ID} python -c "import torch; print(f'CUDA available: {torch.cuda.is_available()}'); print(f'GPU count: {torch.cuda.device_count()}')"
           
-      - name: Run light vLLM EC2 test
+      - name: Test vLLM API endpoint
         run: |
-          docker exec ${CONTAINER_ID} scripts/vllm/vllm_0_13_0_test_setup.sh
-          docker exec ${CONTAINER_ID} scripts/vllm/vllm_cuda_test.sh
-
+          docker exec ${CONTAINER_ID} bash -c "
+            timeout 60 bash -c 'until curl -s http://localhost:8000/health > /dev/null; do
+              echo \"Waiting for vLLM server...\";
+              sleep 2;
+            done'
+          "
+      
+          docker exec ${CONTAINER_ID} curl -f http://localhost:8000/health
+      
+          docker exec ${CONTAINER_ID} curl -f http://localhost:8000/v1/models
+      
+          docker exec ${CONTAINER_ID} curl -f http://localhost:8000/v1/completions \
+            -H "Content-Type: application/json" \
+            -d '{
+              "model": "your-model-name",
+              "prompt": "Hello, world!",
+              "max_tokens": 10
+            }'
           
