@@ -25,12 +25,7 @@ jobs:
 
       - name: Start vLLM container for job ${{ matrix.job_id }}
         run: |
-          CONTAINER_ID=$(docker run -d --rm --gpus=all \
-            -v ${HOME}/.cache/huggingface:/root/.cache/huggingface \
-            -e HF_TOKEN=${{ secrets.HUGGING_FACE_HUB_TOKEN }} \
-            -v .:/workdir --workdir /workdir \
-            -p $((8000 + ${{ matrix.job_id }})):8000 \
-            public.ecr.aws/deep-learning-containers/vllm:0.13.0-gpu-py312-ec2 
+          CONTAINER_ID=$(docker run -d --rm --gpus=all public.ecr.aws/deep-learning-containers/vllm:0.13.0-gpu-py312-ec2 
             
           echo "CONTAINER_ID=$CONTAINER_ID" >> $GITHUB_ENV
 
