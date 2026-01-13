@@ -1,4 +1,4 @@
-name: Test - light 2 GPU Node Pool
+name: Test - Light 2 GPU Node Pool
 
 on:
   workflow_dispatch:
