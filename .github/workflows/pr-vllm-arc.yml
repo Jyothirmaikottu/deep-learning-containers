@@ -89,6 +89,7 @@ jobs:
 
       - name: Test vLLM container startup
         run: |
+          nvidia-smi
           echo "=== Testing vLLM container startup ==="
           docker run --rm --gpus all \
             ${{ env.VLLM_DLC_IMAGE }} \
