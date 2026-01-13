@@ -19,10 +19,6 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v5
 
-      - name: Check GPU
-        run: |
-          nvidia-smi
-
       - name: Pull vLLM image
         run: |
           docker pull public.ecr.aws/deep-learning-containers/vllm:0.13.0-gpu-py312-ec2
