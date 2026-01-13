@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   push:
     paths:
-      - ".github/workflows/test-light-gpu-autoscaling.yaml"
+      - ".github/workflows/test-light-2-gpu-autoscaling.yaml"
 
 jobs:
   single-gpu-validation:
