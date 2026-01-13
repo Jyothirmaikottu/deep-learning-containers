@@ -27,7 +27,7 @@ jobs:
         run: |
           CONTAINER_ID=$(docker run -d --rm --gpus=all public.ecr.aws/deep-learning-containers/vllm:0.13.0-gpu-py312-ec2)
 
-          sleep 1000
+          sleep 400
             
           echo "CONTAINER_ID=$CONTAINER_ID" >> $GITHUB_ENV
 
