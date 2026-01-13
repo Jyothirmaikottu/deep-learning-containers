@@ -33,15 +33,9 @@ jobs:
         run: |
           docker exec ${CONTAINER_ID} nvidia-smi
           docker exec ${CONTAINER_ID} python -c "import torch; print(f'CUDA available: {torch.cuda.is_available()}'); print(f'GPU count: {torch.cuda.device_count()}')"
-
-      - name: Run light vLLM inference test
+          
+      - name: Run light vLLM EC2 test
         run: |
-          docker exec ${CONTAINER_ID} python -c "
-          from vllm import LLM, SamplingParams
-          llm = LLM(model='facebook/opt-125m', max_model_len=512)
-          prompts = ['Hello, my name is', 'The capital of France is']
-          sampling_params = SamplingParams(temperature=0.8, top_p=0.95, max_tokens=50)
-          outputs = llm.generate(prompts, sampling_params)
-          for output in outputs:
-              print(f'Generated: {output.outputs.text}')
-          "
+          docker exec ${CONTAINER_ID} scripts/vllm/vllm_0_13_0_test_setup.sh
+          docker exec ${CONTAINER_ID} scripts/vllm/vllm_ec2_examples_test.sh
+          
