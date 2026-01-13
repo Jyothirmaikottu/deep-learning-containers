@@ -1,0 +1,75 @@
+name: Test - Light GPU Node Pool
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - ".github/workflows/test-light-gpu-autoscaling.yaml"
+
+jobs:
+  single-gpu-validation:
+    runs-on: light-gpu-runner  
+    concurrency:
+      group: ${{ github.workflow }}-single-gpu-${{ github.run_number }}
+      cancel-in-progress: false
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Pull vLLM image
+        run: |
+          docker pull public.ecr.aws/deep-learning-containers/vllm:0.13.0-gpu-py312-ec2
+
+      - name: Verify GPU availability
+        run: |
+          nvidia-smi
+          nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv
+
+      - name: Start vLLM container with GPU
+        run: |
+          CONTAINER_ID=$(docker run -d --rm --gpus=all \
+            -v ${HOME}/.cache/huggingface:/root/.cache/huggingface \
+            -e HF_TOKEN=${{ secrets.HUGGING_FACE_HUB_TOKEN }} \
+            public.ecr.aws/deep-learning-containers/vllm:0.13.0-gpu-py312-ec2 \
+            sleep 300)
+          echo "CONTAINER_ID=$CONTAINER_ID" >> $GITHUB_ENV
+
+      - name: Test GPU access in container
+        run: |
+          docker exec ${CONTAINER_ID} nvidia-smi
+          docker exec ${CONTAINER_ID} python -c "import torch; print(f'CUDA available: {torch.cuda.is_available()}'); print(f'GPU count: {torch.cuda.device_count()}')"
+
+      - name: Run light vLLM inference test
+        run: |
+          docker exec ${CONTAINER_ID} python -c "
+          from vllm import LLM, SamplingParams
+          llm = LLM(model='facebook/opt-125m', max_model_len=512)
+          prompts = ['Hello, my name is', 'The capital of France is']
+          sampling_params = SamplingParams(temperature=0.8, top_p=0.95, max_tokens=50)
+          outputs = llm.generate(prompts, sampling_params)
+          for output in outputs:
+              print(f'Generated: {output.outputs.text}')
+          "
+
+  parallel-light-gpu-test:
+    runs-on: light-gpu-runner
+    strategy:
+      matrix:
+        model: ['facebook/opt-125m', 'facebook/opt-350m']
+    concurrency:
+      group: ${{ github.workflow }}-parallel-light-${{ matrix.model }}-${{ github.run_number }}
+      cancel-in-progress: false
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+
+      - name: Test model ${{ matrix.model }}
+        run: |
+          docker run --rm --gpus=all \
+            -e HF_TOKEN=${{ secrets.HUGGING_FACE_HUB_TOKEN }} \
+            public.ecr.aws/deep-learning-containers/vllm:0.13.0-gpu-py312-ec2 \
+            python -c "
+          from vllm import LLM
+          llm = LLM(model='${{ matrix.model }}', max_model_len=512)
+          print('Model ${{ matrix.model }} loaded successfully')
+          "
