@@ -38,5 +38,6 @@ jobs:
       - name: Run light vLLM EC2 test
         run: |
           docker exec ${CONTAINER_ID} scripts/vllm/vllm_0_13_0_test_setup.sh
-          docker exec ${CONTAINER_ID} scripts/vllm/vllm_ec2_examples_test.sh
+          docker exec ${CONTAINER_ID} scripts/vllm/vllm_cuda_test.sh
+
           
