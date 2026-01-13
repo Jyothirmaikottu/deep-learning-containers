@@ -26,6 +26,8 @@ jobs:
       - name: Start vLLM container for job ${{ matrix.job_id }}
         run: |
           CONTAINER_ID=$(docker run -d --rm --gpus=all public.ecr.aws/deep-learning-containers/vllm:0.13.0-gpu-py312-ec2)
+
+          sleep 1000
             
           echo "CONTAINER_ID=$CONTAINER_ID" >> $GITHUB_ENV
 
@@ -39,20 +41,6 @@ jobs:
       - name: Run inference test on job ${{ matrix.job_id }}
         run: |
           docker exec ${CONTAINER_ID} curl -f http://localhost:8000/v1/models
-
-      #     # Run inference
-      #     docker exec ${CONTAINER_ID} curl -f http://localhost:8000/v1/completions \
-      #       -H "Content-Type: application/json" \
-      #       -d '{
-      #         "model": "meta-llama/Llama-3.2-1B-Instruct",
-      #         "prompt": "Job ${{ matrix.job_id }} with 4 GPUs: Hello, world!",
-      #         "max_tokens": 100
-      #       }'
-
-      # - name: Keep container running for 3 minutes
-      #   run: |
-      #     echo "Keeping job ${{ matrix.job_id }} (4 GPUs) busy..."
-      #     sleep 180
 
       - name: Show final GPU stats
         if: always()
