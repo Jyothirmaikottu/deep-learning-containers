@@ -30,10 +30,8 @@ jobs:
             -e HF_TOKEN=${{ secrets.HUGGING_FACE_HUB_TOKEN }} \
             -v .:/workdir --workdir /workdir \
             -p $((8000 + ${{ matrix.job_id }})):8000 \
-            public.ecr.aws/deep-learning-containers/vllm:0.13.0-gpu-py312-ec2 \
-            vllm serve meta-llama/Llama-3.2-1B-Instruct \
-            --host 0.0.0.0 \
-            --port 8000 )
+            public.ecr.aws/deep-learning-containers/vllm:0.13.0-gpu-py312-ec2 
+            
           echo "CONTAINER_ID=$CONTAINER_ID" >> $GITHUB_ENV
 
       - name: Verify GPU allocation for job ${{ matrix.job_id }}
@@ -43,10 +41,9 @@ jobs:
           docker exec ${CONTAINER_ID} nvidia-smi --query-gpu=index,name,utilization.gpu,memory.used --format=csv
           docker exec ${CONTAINER_ID} python -c "import torch; print(f'Torch sees {torch.cuda.device_count()} GPU(s)')"
 
-      # - name: Run inference test on job ${{ matrix.job_id }}
-      #   run: |
-      #     # List available models
-      #     docker exec ${CONTAINER_ID} curl -f http://localhost:8000/v1/models
+      - name: Run inference test on job ${{ matrix.job_id }}
+        run: |
+          docker exec ${CONTAINER_ID} curl -f http://localhost:8000/v1/models
 
       #     # Run inference
       #     docker exec ${CONTAINER_ID} curl -f http://localhost:8000/v1/completions \
