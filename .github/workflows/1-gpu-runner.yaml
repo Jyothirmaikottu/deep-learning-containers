@@ -25,6 +25,7 @@ jobs:
           CONTAINER_ID=$(docker run -d --rm --gpus=all \
             -v ${HOME}/.cache/huggingface:/root/.cache/huggingface \
             -e HF_TOKEN=${{ secrets.HUGGING_FACE_HUB_TOKEN }} \
+            -v .:/workdir --workdir /workdir \
             public.ecr.aws/deep-learning-containers/vllm:0.13.0-gpu-py312-ec2 \
             sleep 300)
           echo "CONTAINER_ID=$CONTAINER_ID" >> $GITHUB_ENV
