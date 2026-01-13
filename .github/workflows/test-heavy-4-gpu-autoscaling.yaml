@@ -1,14 +1,14 @@
-name: Test - Heavy 2 GPU Node Pool
+name: Test - Heavy 4 GPU Node Pool
 
 on:
   workflow_dispatch:
   push:
     paths:
-      - ".github/workflows/test-heavy-2-gpu-autoscaling.yaml"
+      - ".github/workflows/test-heavy-4-gpu-autoscaling.yaml"
 
 jobs:
   single-gpu-validation:
-    runs-on: heavy-2gpu-runner
+    runs-on: heavy-4gpu-runner
     concurrency:
       group: ${{ github.workflow }}-single-gpu-${{ github.run_number }}
       cancel-in-progress: false
@@ -52,7 +52,7 @@ jobs:
           "
 
   parallel-light-gpu-test:
-    runs-on: heavy-2gpu-runner
+    runs-on: heavy-4gpu-runner
     strategy:
       matrix:
         model: ['facebook/opt-125m', 'facebook/opt-350m']
