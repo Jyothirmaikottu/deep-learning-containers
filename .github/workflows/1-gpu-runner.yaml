@@ -33,10 +33,17 @@ jobs:
             --port 8000)
           echo "CONTAINER_ID=$CONTAINER_ID" >> $GITHUB_ENV
 
-      - name: Test GPU access in container
+      - name: Verify GPU allocation
         run: |
-          docker exec ${CONTAINER_ID} nvidia-smi
-          docker exec ${CONTAINER_ID} python -c "import torch; print(f'CUDA available: {torch.cuda.is_available()}'); print(f'GPU count: {torch.cuda.device_count()}')"
+          # Check what the container runtime sees
+          docker exec ${CONTAINER_ID} bash -c 'echo $CUDA_VISIBLE_DEVICES'
+      
+          # Run a GPU workload and check which GPU is active
+          docker exec ${CONTAINER_ID} nvidia-smi --query-compute-apps=pid,used_gpu_memory --format=csv
+      
+          # Count available GPUs from CUDA perspective
+          docker exec ${CONTAINER_ID} python -c "import torch; print(f'Torch sees {torch.cuda.device_count()} GPU(s)')"
+
           
       - name: Test vLLM API endpoint
         run: |
