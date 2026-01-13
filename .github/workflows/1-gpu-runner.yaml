@@ -20,11 +20,6 @@ jobs:
         run: |
           docker pull public.ecr.aws/deep-learning-containers/vllm:0.13.0-gpu-py312-ec2
 
-      - name: Verify GPU availability
-        run: |
-          nvidia-smi
-          nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv
-
       - name: Start vLLM container with GPU
         run: |
           CONTAINER_ID=$(docker run -d --rm --gpus=all \
