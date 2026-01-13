@@ -1,54 +1,59 @@
-name: Test - 8 GPUs Parallel
+name: Test - 2 Jobs with 4 GPUs Each
 
 on:
   workflow_dispatch:
   push:
     paths:
-    - ".github/workflows/1-gpu-runner.yaml"
+    - ".github/workflows/multi-gpu-runner.yaml"
 
 jobs:
   multi-gpu-validation:
-    runs-on: gpu-1gpu-runner
+    runs-on: gpu-1gpu-runner  
     strategy:
       matrix:
-        gpu_id: [0, 1, 2, 3, 4, 5, 6, 7]
-      max-parallel: 8
+        job_id: [0, 1] 
+      max-parallel: 2
       fail-fast: false  
       
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
 
+      - name: Check GPU
+        run: |
+          nvidia-smi
+
       - name: Pull vLLM image
         run: |
           docker pull public.ecr.aws/deep-learning-containers/vllm:0.13.0-gpu-py312-ec2
 
-      - name: Start vLLM container on GPU ${{ matrix.gpu_id }}
+      - name: Start vLLM container for job ${{ matrix.job_id }}
         run: |
           CONTAINER_ID=$(docker run -d --rm --gpus=all \
             -v ${HOME}/.cache/huggingface:/root/.cache/huggingface \
             -e HF_TOKEN=${{ secrets.HUGGING_FACE_HUB_TOKEN }} \
             -v .:/workdir --workdir /workdir \
-            -p $((8000 + ${{ matrix.gpu_id }})):8000 \
+            -p $((8000 + ${{ matrix.job_id }})):8000 \
             public.ecr.aws/deep-learning-containers/vllm:0.13.0-gpu-py312-ec2 \
             vllm serve meta-llama/Llama-3.2-1B-Instruct \
             --host 0.0.0.0 \
-            --port 8000)
+            --port 8000 \
+            --tensor-parallel-size 4)
           echo "CONTAINER_ID=$CONTAINER_ID" >> $GITHUB_ENV
 
-      - name: Verify GPU allocation for job ${{ matrix.gpu_id }}
+      - name: Verify GPU allocation for job ${{ matrix.job_id }}
         run: |
-          echo "=== Job ${{ matrix.gpu_id }} GPU Info ==="
+          echo "=== Job ${{ matrix.job_id }} GPU Info ==="
           docker exec ${CONTAINER_ID} nvidia-smi --query-gpu=index,name,utilization.gpu,memory.used --format=csv
           docker exec ${CONTAINER_ID} python -c "import torch; print(f'Torch sees {torch.cuda.device_count()} GPU(s)')"
 
-      - name: Run inference test on GPU ${{ matrix.gpu_id }}
+      - name: Run inference test on job ${{ matrix.job_id }}
         run: |
           # Wait for vLLM server
           docker exec ${CONTAINER_ID} bash -c "
-            timeout 120 bash -c 'until curl -s http://localhost:8000/health > /dev/null; do
+            timeout 180 bash -c 'until curl -s http://localhost:8000/health > /dev/null; do
               echo \"Waiting for vLLM server...\";
-              sleep 2;
+              sleep 5;
             done'
           "
 
@@ -63,19 +68,19 @@ jobs:
             -H "Content-Type: application/json" \
             -d '{
               "model": "meta-llama/Llama-3.2-1B-Instruct",
-              "prompt": "GPU ${{ matrix.gpu_id }} test: Hello, world!",
-              "max_tokens": 50
+              "prompt": "Job ${{ matrix.job_id }} with 4 GPUs: Hello, world!",
+              "max_tokens": 100
             }'
 
-      - name: Keep container running for 2 minutes
+      - name: Keep container running for 3 minutes
         run: |
-          echo "Keeping GPU ${{ matrix.gpu_id }} busy..."
-          sleep 120
+          echo "Keeping job ${{ matrix.job_id }} (4 GPUs) busy..."
+          sleep 180
 
       - name: Show final GPU stats
         if: always()
         run: |
-          echo "=== Final GPU Stats for Job ${{ matrix.gpu_id }} ==="
+          echo "=== Final GPU Stats for Job ${{ matrix.job_id }} ==="
           docker exec ${CONTAINER_ID} nvidia-smi || true
 
       - name: Cleanup container
