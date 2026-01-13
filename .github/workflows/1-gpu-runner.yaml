@@ -2,6 +2,9 @@ name: Test - 8 GPUs Parallel
 
 on:
   workflow_dispatch:
+  push:
+    paths:
+    - ".github/workflows/1-gpu-runner.yaml"
 
 jobs:
   multi-gpu-validation:
