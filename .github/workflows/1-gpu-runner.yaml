@@ -1,14 +1,14 @@
-name: Test - Heavy 4 GPU Node Pool
+name: Test - 1 GPU 
 
 on:
   workflow_dispatch:
   push:
     paths:
-      - ".github/workflows/test-heavy-4-gpu-autoscaling.yaml"
+      - ".github/workflows/1-gpu-runner.yaml"
 
 jobs:
   single-gpu-validation:
-    runs-on: heavy-4gpu-runner
+    runs-on: gpu-1gpu-runner
     concurrency:
       group: ${{ github.workflow }}-single-gpu-${{ github.run_number }}
       cancel-in-progress: false
@@ -49,27 +49,4 @@ jobs:
           outputs = llm.generate(prompts, sampling_params)
           for output in outputs:
               print(f'Generated: {output.outputs.text}')
-          "
-
-  parallel-light-gpu-test:
-    runs-on: heavy-4gpu-runner
-    strategy:
-      matrix:
-        model: ['facebook/opt-125m', 'facebook/opt-350m']
-    concurrency:
-      group: ${{ github.workflow }}-parallel-light-${{ matrix.model }}-${{ github.run_number }}
-      cancel-in-progress: false
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v5
-
-      - name: Test model ${{ matrix.model }}
-        run: |
-          docker run --rm --gpus=all \
-            -e HF_TOKEN=${{ secrets.HUGGING_FACE_HUB_TOKEN }} \
-            public.ecr.aws/deep-learning-containers/vllm:0.13.0-gpu-py312-ec2 \
-            python -c "
-          from vllm import LLM
-          llm = LLM(model='${{ matrix.model }}', max_model_len=512)
-          print('Model ${{ matrix.model }} loaded successfully')
           "
