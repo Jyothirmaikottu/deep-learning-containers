@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   push:
     paths:
-    - ".github/workflows/multi-gpu-runner.yaml"
+    - ".github/workflows/1-gpu-runner.yaml"
 
 jobs:
   multi-gpu-validation:
