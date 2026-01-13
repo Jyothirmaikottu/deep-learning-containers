@@ -86,15 +86,7 @@ jobs:
     steps:
       - name: Checkout DLC source
         uses: actions/checkout@v5
-      
-      - name: Verify GPU availability
-        run: |
-          echo "=== GPU Information ==="
-          nvidia-smi
-          echo ""
-          echo "=== Docker GPU Runtime ==="
-          docker run --rm --gpus all nvidia/cuda:11.8-base-ubuntu20.04 nvidia-smi
-      
+
       - name: Test vLLM container startup
         run: |
           echo "=== Testing vLLM container startup ==="
