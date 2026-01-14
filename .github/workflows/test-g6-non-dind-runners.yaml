@@ -1,0 +1,43 @@
+
+name: Test - Multi-GPU Runners
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - ".github/workflows/test-g6-non-dind-runners.yaml"
+
+jobs:
+  test-1gpu-runner:
+    runs-on: g6-non-dind-runner
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Job Info
+        run: |
+          echo "=== 1-GPU Runner Test ==="
+          echo "Runner: $(hostname)"
+          echo "Timestamp: $(date -u)"
+      - name: Check GPU Info
+        run: |
+          echo "=== GPU Information ==="
+          nvidia-smi --query-gpu=index,name,memory.total,memory.used --format=csv
+      - name: Check Node Resources
+        run: |
+          echo "=== Node Information ==="
+          echo "Hostname: $(hostname)"
+          echo "CPU cores: $(nproc)"
+          echo "Memory: $(free -h | grep Mem | awk '{print $2}')"
+      - name: Run GPU Test
+        run: |
+          docker run --rm --gpus=all \
+            -e CUDA_VISIBLE_DEVICES=0 \
+            nvidia/cuda:12.2.0-base-ubuntu22.04 \
+            bash -c "
+              echo '=== 1-GPU Test ==='
+              nvidia-smi
+              echo ''
+              echo '✅ 1-GPU test completed'
+            "
+  
