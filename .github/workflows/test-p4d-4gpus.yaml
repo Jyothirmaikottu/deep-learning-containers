@@ -16,9 +16,6 @@ jobs:
       - name: Pull vLLM image
         run: docker pull public.ecr.aws/deep-learning-containers/vllm:0.13.0-gpu-py312-ec2
       
-      - name: Verify GPUs
-        run: docker run --rm --gpus=all public.ecr.aws/deep-learning-containers/vllm:0.13.0-gpu-py312-ec2 nvidia-smi
-      
       - name: Start vLLM container (4 GPUs)
         run: |
           CONTAINER_ID=$(docker run -d --rm --gpus=all \
@@ -26,13 +23,13 @@ jobs:
             public.ecr.aws/deep-learning-containers/vllm:0.13.0-gpu-py312-ec2)
           echo "CONTAINER_ID=$CONTAINER_ID" >> $GITHUB_ENV
           echo "Container ID: $CONTAINER_ID"
-          sleep 30
+          sleep 200
+          docker logs --tail 60 ${CONTAINER_ID} 
       
       - name: Verify GPU allocation
         run: |
           echo "=== GPU Info ==="
           docker exec ${CONTAINER_ID} nvidia-smi
-          docker exec ${CONTAINER_ID} python -c "import torch; print(f'Torch sees {torch.cuda.device_count()} GPU(s)')"
       
       - name: Show container logs
         if: always()
