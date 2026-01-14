@@ -16,27 +16,7 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
-      
-      - name: Setup for SGLang datasets
-        run: |
-            mkdir -p ${HOME}/dataset
-            if [ ! -f ${HOME}/dataset/ShareGPT_V3_unfiltered_cleaned_split.json ]; then
-                echo "Downloading ShareGPT dataset..."
-               curl -L -o ${HOME}/dataset/ShareGPT_V3_unfiltered_cleaned_split.json \
-                https://huggingface.co/datasets/anon8231489123/ShareGPT_Vicuna_unfiltered/resolve/main/ShareGPT_V3_unfiltered_cleaned_split.json
-            else
-                echo "ShareGPT dataset already exists. Skipping download."
-            fi
-            
-      - name: Verify dataset
-        run: |
-          if [ -f ${HOME}/dataset/ShareGPT_V3_unfiltered_cleaned_split.json ]; then
-            echo " Dataset found: $(ls -lh ${HOME}/dataset/ShareGPT_V3_unfiltered_cleaned_split.json)"
-          else
-            echo " Dataset not found!"
-            exit 1
-          fi
-
+        
       - name: Pull image
         run: docker pull ${{ env.SGLANG_IMAGE }}
       
@@ -45,7 +25,6 @@ jobs:
         run: |
           CONTAINER_ID=$(docker run -d -it --rm --gpus=all \
             -v ${HOME}/.cache/huggingface:/root/.cache/huggingface \
-            -v ${HOME}/dataset:/dataset \
             -p 30000:30000 \
             -e SM_SGLANG_MODEL_PATH=Qwen/Qwen3-0.6B \
             -e SM_SGLANG_REASONING_PARSER=qwen3 \
@@ -65,8 +44,7 @@ jobs:
           --host 127.0.0.1 --port 30000 \
           --num-prompts 1000 \
           --model Qwen/Qwen3-0.6B \
-          --dataset-name sharegpt \
-          --dataset-path /dataset/ShareGPT_V3_unfiltered_cleaned_split.json
+          --dataset-name random 
       
       - name: Show container logs
         if: always()
