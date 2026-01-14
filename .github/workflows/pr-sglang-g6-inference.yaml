@@ -17,9 +17,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
       
-      - name: Pull image
-        run: docker pull ${{ env.SGLANG_IMAGE }}
-      
       - name: Setup for SGLang datasets
         run: |
             mkdir -p ${HOME}/dataset
@@ -30,6 +27,19 @@ jobs:
             else
                 echo "ShareGPT dataset already exists. Skipping download."
             fi
+            
+      - name: Verify dataset
+        run: |
+          if [ -f ${HOME}/dataset/ShareGPT_V3_unfiltered_cleaned_split.json ]; then
+            echo " Dataset found: $(ls -lh ${HOME}/dataset/ShareGPT_V3_unfiltered_cleaned_split.json)"
+          else
+            echo " Dataset not found!"
+            exit 1
+          fi
+
+      - name: Pull image
+        run: docker pull ${{ env.SGLANG_IMAGE }}
+      
 
       - name: Start container
         run: |
