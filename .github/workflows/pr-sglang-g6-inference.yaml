@@ -8,9 +8,11 @@ on:
 
 env:
   SGLANG_IMAGE: "lmsysorg/sglang:v0.5.7-runtime"
+  SGLANG_VERSION: "0.5.7"
+  DATASET_URL: "https://huggingface.co/datasets/anon8231489123/ShareGPT_Vicuna_unfiltered/resolve/main/ShareGPT_V3_unfiltered_cleaned_split.json"
 
 jobs:
-  sglang-heavy-inference:
+  sglang-upstream-test:
     runs-on: g6-2gpu-runner
     steps:
       - name: Checkout
@@ -19,48 +21,34 @@ jobs:
       - name: Pull image
         run: docker pull ${{ env.SGLANG_IMAGE }}
       
-      - name: Start container (2 GPUs)
+      - name: Checkout SGLang tests
+        uses: actions/checkout@v5
+        with:
+          repository: sgl-project/sglang
+          ref: v${{ env.SGLANG_VERSION }}
+          path: sglang_source
+      
+      - name: Start container
         run: |
-          CONTAINER_ID=$(docker run -d --gpus=all \
-            -p 30000:30000 \
-            ${{ env.SGLANG_IMAGE }} \
-            python3 -m sglang.launch_server \
-            --model-path Qwen/Qwen2.5-0.5B-Instruct \
-            --host 0.0.0.0 --port 30000 \
-            --tp 2)
+          CONTAINER_ID=$(docker run -d --gpus=all --entrypoint /bin/bash \
+            -v ${HOME}/.cache/huggingface:/root/.cache/huggingface \
+            -v ./sglang_source:/workdir --workdir /workdir \
+            -e HF_TOKEN=${{ secrets.HUGGING_FACE_HUB_TOKEN }} \
+            ${{ env.SGLANG_IMAGE }})
           echo "CONTAINER_ID=${CONTAINER_ID}" >> ${GITHUB_ENV}
-          
-          # Wait for container to be ready with timeout (up to 10 minutes)
-          echo "Waiting for SGLang server to start..."
-          for i in {1..120}; do
-            # Try health endpoint first, fall back to v1/models
-            if docker exec ${CONTAINER_ID} curl -s -f http://localhost:30000/health > /dev/null 2>&1 || \
-               docker exec ${CONTAINER_ID} curl -s -f http://localhost:30000/v1/models > /dev/null 2>&1; then
-              echo "Server is ready after $((i * 5)) seconds!"
-              break
-            fi
-            if ! docker ps -q --no-trunc | grep -q ${CONTAINER_ID}; then
-              echo "Container exited unexpectedly!"
-              docker logs ${CONTAINER_ID} || true
-              exit 1
-            fi
-            if [ $i -eq 120 ]; then
-              echo "Timeout waiting for server to start after 10 minutes"
-              docker logs ${CONTAINER_ID} || true
-              exit 1
-            fi
-            echo "Waiting... ($((i * 5))s / 600s)"
-            sleep 5
-          done
       
-      - name: Verify GPUs
-        run: docker exec ${CONTAINER_ID} nvidia-smi
-      
-      - name: Test inference
+      - name: Setup for SGLang tests
         run: |
-          docker exec ${CONTAINER_ID} curl -X POST http://localhost:30000/generate \
-            -H "Content-Type: application/json" \
-            -d '{"text": "Hello, how are you?", "sampling_params": {"temperature": 0.7, "max_new_tokens": 50}}'
+          docker exec ${CONTAINER_ID} sh -c 'set -eux
+          bash scripts/ci/ci_install_dependency.sh'
+      
+      - name: Run SGLang upstream tests
+        run: |
+          docker exec ${CONTAINER_ID} sh -c 'set -eux
+          nvidia-smi
+          # SRT backend Test
+          cd /workdir/test
+          python3 run_suite.py --hw cuda --suite stage-a-test-1'
       
       - name: Show container logs
         if: always()
@@ -72,63 +60,4 @@ jobs:
           docker stop ${CONTAINER_ID} || true
           docker rm ${CONTAINER_ID} || true
 
-  sglang-light-inference:
-    runs-on: g6-1gpu-runner
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v5
-      
-      - name: Pull image
-        run: docker pull ${{ env.SGLANG_IMAGE }}
-      
-      - name: Start container (1 GPU)
-        run: |
-          CONTAINER_ID=$(docker run -d --gpus=all \
-            -p 30000:30000 \
-            ${{ env.SGLANG_IMAGE }} \
-            python3 -m sglang.launch_server \
-            --model-path Qwen/Qwen2.5-0.5B-Instruct \
-            --host 0.0.0.0 --port 30000)
-          echo "CONTAINER_ID=${CONTAINER_ID}" >> ${GITHUB_ENV}
-          
-          # Wait for container to be ready with timeout (up to 10 minutes)
-          echo "Waiting for SGLang server to start..."
-          for i in {1..120}; do
-            # Try health endpoint first, fall back to v1/models
-            if docker exec ${CONTAINER_ID} curl -s -f http://localhost:30000/health > /dev/null 2>&1 || \
-               docker exec ${CONTAINER_ID} curl -s -f http://localhost:30000/v1/models > /dev/null 2>&1; then
-              echo "Server is ready after $((i * 5)) seconds!"
-              break
-            fi
-            if ! docker ps -q --no-trunc | grep -q ${CONTAINER_ID}; then
-              echo "Container exited unexpectedly!"
-              docker logs ${CONTAINER_ID} || true
-              exit 1
-            fi
-            if [ $i -eq 120 ]; then
-              echo "Timeout waiting for server to start after 10 minutes"
-              docker logs ${CONTAINER_ID} || true
-              exit 1
-            fi
-            echo "Waiting... ($((i * 5))s / 600s)"
-            sleep 5
-          done
-      
-      - name: Verify GPUs
-        run: docker exec ${CONTAINER_ID} nvidia-smi
-      
-      - name: Test inference
-        run: |
-          docker exec ${CONTAINER_ID} curl -X POST http://localhost:30000/generate \
-            -H "Content-Type: application/json" \
-            -d '{"text": "Hello, how are you?", "sampling_params": {"temperature": 0.7, "max_new_tokens": 50}}'
-      
-      - name: Show container logs
-        if: always()
-        run: docker logs ${CONTAINER_ID} || true
-      
-      - name: Cleanup
-        if: always()
-        run: |
-          docker stop ${CONTAINER_ID} || true
-          docker rm ${CONTAINER_ID} || true
+
