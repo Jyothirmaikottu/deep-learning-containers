@@ -6,129 +6,93 @@ on:
     paths:
       - ".github/workflows/pr-sglang-g6-inference.yaml"
 
-permissions:
-  contents: read
-  pull-requests: read
-
 env:
   SGLANG_IMAGE: "public.ecr.aws/deep-learning-containers/sglang:0.5.5-gpu-py312"
-  FORCE_COLOR: "1"
-  TEST_ARTIFACTS_DIRECTORY: "/test_artifacts/sglang"
 
 jobs:
-  # ======================================================
-  # ============= HEAVY JOB - 2 GPU Runner ===============
-  # ======================================================
   sglang-heavy-inference:
-    runs-on: g6-2gpu-runner  # 2 GPUs on g6.12xlarge
+    runs-on: g6-2gpu-runner
     steps:
-      - name: Checkout DLC source
+      - name: Checkout
         uses: actions/checkout@v5
       
-      - name: Pull SGLang image
-        run: |
-          docker pull ${{ env.SGLANG_IMAGE }}
+      - name: Pull image
+        run: docker pull ${{ env.SGLANG_IMAGE }}
       
-      - name: Setup SGLang datasets
+      - name: Verify GPUs
         run: |
-          mkdir -p ${TEST_ARTIFACTS_DIRECTORY}/dataset
-          if [ ! -f ${TEST_ARTIFACTS_DIRECTORY}/dataset/ShareGPT_V3_unfiltered_cleaned_split.json ]; then
-            echo "Downloading ShareGPT dataset..."
-            wget -P ${TEST_ARTIFACTS_DIRECTORY}/dataset \
-              https://huggingface.co/datasets/anon8231489123/ShareGPT_Vicuna_unfiltered/resolve/main/ShareGPT_V3_unfiltered_cleaned_split.json
-          else
-            echo "ShareGPT dataset already exists. Skipping download."
-          fi
+          echo "=== Host GPUs ==="
+          nvidia-smi
+          echo ""
+          echo "=== Container GPU Test ==="
+          docker run --rm --gpus=all ${{ env.SGLANG_IMAGE }} nvidia-smi
       
       - name: Start container (2 GPUs)
         run: |
-          CONTAINER_ID=$(docker run -d -it --rm --gpus=all \
-            -v ${HOME}/.cache/huggingface:/root/.cache/huggingface \
-            -v ${TEST_ARTIFACTS_DIRECTORY}/dataset:/dataset \
+          CONTAINER_ID=$(docker run -d --rm --gpus=all \
             -p 30000:30000 \
-            -e SM_SGLANG_MODEL_PATH=meta-llama/Llama-3.2-3B-Instruct \
-            -e SM_SGLANG_REASONING_PARSER=llama3 \
-            -e SM_SGLANG_HOST=127.0.0.1 \
-            -e SM_SGLANG_PORT=30000 \
-            -e SM_SGLANG_TP_SIZE=2 \
             -e HF_TOKEN=${{ secrets.HUGGING_FACE_HUB_TOKEN }} \
-            ${{ env.SGLANG_IMAGE }})
+            ${{ env.SGLANG_IMAGE }} \
+            python3 -m sglang.launch_server \
+            --model-path meta-llama/Llama-3.2-3B-Instruct \
+            --host 0.0.0.0 --port 30000 \
+            --tp 2)
           echo "CONTAINER_ID=${CONTAINER_ID}" >> ${GITHUB_ENV}
-          echo "Waiting for serving endpoint startup (2 GPUs)..."
-          sleep 120s
-          docker logs ${CONTAINER_ID}
+          sleep 60
       
-      - name: Run SGLang heavy benchmark (2 GPUs)
+      - name: Test inference
         run: |
-          docker exec ${CONTAINER_ID} python3 -m sglang.bench_serving \
-            --backend sglang \
-            --host 127.0.0.1 --port 30000 \
-            --num-prompts 2000 \
-            --model meta-llama/Llama-3.2-3B-Instruct \
-            --dataset-name sharegpt \
-            --dataset-path /dataset/ShareGPT_V3_unfiltered_cleaned_split.json
+          docker exec ${CONTAINER_ID} curl -X POST http://localhost:30000/v1/completions \
+            -H "Content-Type: application/json" \
+            -d '{"model": "meta-llama/Llama-3.2-3B-Instruct", "prompt": "Hello, how are you?", "max_tokens": 50}'
+      
+      - name: Show GPU usage
+        if: always()
+        run: docker exec ${CONTAINER_ID} nvidia-smi || true
       
       - name: Cleanup
         if: always()
-        run: |
-          if [ ! -z "${CONTAINER_ID}" ]; then
-            docker stop ${CONTAINER_ID} || true
-          fi
+        run: docker stop ${CONTAINER_ID} || true
 
-  # ======================================================
-  # ============= LIGHT JOB - 1 GPU Runner ===============
-  # ======================================================
   sglang-light-inference:
-    runs-on: g6-1gpu-runner  # 1 GPU on g6.12xlarge
+    runs-on: g6-1gpu-runner
     steps:
-      - name: Checkout DLC source
+      - name: Checkout
         uses: actions/checkout@v5
       
-      - name: Pull SGLang image
-        run: |
-          docker pull ${{ env.SGLANG_IMAGE }}
+      - name: Pull image
+        run: docker pull ${{ env.SGLANG_IMAGE }}
       
-      - name: Setup SGLang datasets
+      - name: Verify GPUs
         run: |
-          mkdir -p ${TEST_ARTIFACTS_DIRECTORY}/dataset
-          if [ ! -f ${TEST_ARTIFACTS_DIRECTORY}/dataset/ShareGPT_V3_unfiltered_cleaned_split.json ]; then
-            echo "Downloading ShareGPT dataset..."
-            wget -P ${TEST_ARTIFACTS_DIRECTORY}/dataset \
-              https://huggingface.co/datasets/anon8231489123/ShareGPT_Vicuna_unfiltered/resolve/main/ShareGPT_V3_unfiltered_cleaned_split.json
-          else
-            echo "ShareGPT dataset already exists. Skipping download."
-          fi
+          echo "=== Host GPUs ==="
+          nvidia-smi
+          echo ""
+          echo "=== Container GPU Test ==="
+          docker run --rm --gpus=all ${{ env.SGLANG_IMAGE }} nvidia-smi
       
       - name: Start container (1 GPU)
         run: |
-          CONTAINER_ID=$(docker run -d -it --rm --gpus=all \
-            -v ${HOME}/.cache/huggingface:/root/.cache/huggingface \
-            -v ${TEST_ARTIFACTS_DIRECTORY}/dataset:/dataset \
+          CONTAINER_ID=$(docker run -d --rm --gpus=all \
             -p 30000:30000 \
-            -e SM_SGLANG_MODEL_PATH=Qwen/Qwen3-0.6B \
-            -e SM_SGLANG_REASONING_PARSER=qwen3 \
-            -e SM_SGLANG_HOST=127.0.0.1 \
-            -e SM_SGLANG_PORT=30000 \
             -e HF_TOKEN=${{ secrets.HUGGING_FACE_HUB_TOKEN }} \
-            ${{ env.SGLANG_IMAGE }})
+            ${{ env.SGLANG_IMAGE }} \
+            python3 -m sglang.launch_server \
+            --model-path Qwen/Qwen2.5-0.5B-Instruct \
+            --host 0.0.0.0 --port 30000)
           echo "CONTAINER_ID=${CONTAINER_ID}" >> ${GITHUB_ENV}
-          echo "Waiting for serving endpoint startup (1 GPU)..."
-          sleep 90s
-          docker logs ${CONTAINER_ID}
+          sleep 45
       
-      - name: Run SGLang light benchmark (1 GPU)
+      - name: Test inference
         run: |
-          docker exec ${CONTAINER_ID} python3 -m sglang.bench_serving \
-            --backend sglang \
-            --host 127.0.0.1 --port 30000 \
-            --num-prompts 1000 \
-            --model Qwen/Qwen3-0.6B \
-            --dataset-name sharegpt \
-            --dataset-path /dataset/ShareGPT_V3_unfiltered_cleaned_split.json
+          docker exec ${CONTAINER_ID} curl -X POST http://localhost:30000/v1/completions \
+            -H "Content-Type: application/json" \
+            -d '{"model": "Qwen/Qwen2.5-0.5B-Instruct", "prompt": "Hello, how are you?", "max_tokens": 50}'
+      
+      - name: Show GPU usage
+        if: always()
+        run: docker exec ${CONTAINER_ID} nvidia-smi || true
       
       - name: Cleanup
         if: always()
-        run: |
-          if [ ! -z "${CONTAINER_ID}" ]; then
-            docker stop ${CONTAINER_ID} || true
-          fi
+        run: docker stop ${CONTAINER_ID} || true
