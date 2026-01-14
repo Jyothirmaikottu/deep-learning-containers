@@ -7,9 +7,8 @@ on:
       - ".github/workflows/pr-sglang-g6-inference.yaml"
 
 env:
-  SGLANG_IMAGE: "lmsysorg/sglang:v0.5.7-runtime"
+  SGLANG_IMAGE: "public.ecr.aws/deep-learning-containers/sglang:0.5.5-gpu-py312"
   SGLANG_VERSION: "0.5.7"
-  DATASET_URL: "https://huggingface.co/datasets/anon8231489123/ShareGPT_Vicuna_unfiltered/resolve/main/ShareGPT_V3_unfiltered_cleaned_split.json"
 
 jobs:
   sglang-upstream-test:
@@ -21,38 +20,46 @@ jobs:
       - name: Pull image
         run: docker pull ${{ env.SGLANG_IMAGE }}
       
-      - name: Checkout SGLang tests
-        uses: actions/checkout@v5
-        with:
-          repository: sgl-project/sglang
-          ref: v${{ env.SGLANG_VERSION }}
-          path: sglang_source
-      
+      - name: Setup for SGLang datasets
+        run: |
+            mkdir -p ${HOME}/dataset
+            if [ ! -f ${HOME}/dataset/ShareGPT_V3_unfiltered_cleaned_split.json ]; then
+                echo "Downloading ShareGPT dataset..."
+                wget -P ${HOME}/dataset https://huggingface.co/datasets/anon8231489123/ShareGPT_Vicuna_unfiltered/resolve/main/ShareGPT_V3_unfiltered_cleaned_split.json
+            else
+                echo "ShareGPT dataset already exists. Skipping download."
+            fi
+
       - name: Start container
         run: |
-          CONTAINER_ID=$(docker run -d --gpus=all --entrypoint /bin/bash \
+          CONTAINER_ID=$(docker run -d -it --rm --gpus=all \
             -v ${HOME}/.cache/huggingface:/root/.cache/huggingface \
-            -v ./sglang_source:/workdir --workdir /workdir \
+            -v ${HOME}/dataset:/dataset \
+            -p 30000:30000 \
+            -e SM_SGLANG_MODEL_PATH=Qwen/Qwen3-0.6B \
+            -e SM_SGLANG_REASONING_PARSER=qwen3 \
+            -e SM_SGLANG_HOST=127.0.0.1 \
+            -e SM_SGLANG_PORT=30000 \
             -e HF_TOKEN=${{ secrets.HUGGING_FACE_HUB_TOKEN }} \
-            ${{ env.SGLANG_IMAGE }})
+            ${{ env.SGLANG_IMAGE }}
           echo "CONTAINER_ID=${CONTAINER_ID}" >> ${GITHUB_ENV}
-      
-      - name: Setup for SGLang tests
+          echo "Waiting for serving endpoint startup ..."
+          sleep 120s
+          docker logs ${CONTAINER_ID}
+          
+      - name: Run SGLang tests
         run: |
-          docker exec ${CONTAINER_ID} sh -c 'set -eux
-          bash scripts/ci/ci_install_dependency.sh'
-      
-      - name: Run SGLang upstream tests
-        run: |
-          docker exec ${CONTAINER_ID} sh -c 'set -eux
-          nvidia-smi
-          # SRT backend Test
-          cd /workdir/test
-          python3 run_suite.py --hw cuda --suite stage-a-test-1'
+          docker exec ${CONTAINER_ID} python3 -m sglang.bench_serving \
+          --backend sglang \
+          --host 127.0.0.1 --port 30000 \
+          --num-prompts 1000 \
+          --model Qwen/Qwen3-0.6B \
+          --dataset-name sharegpt \
+          --dataset-path /dataset/ShareGPT_V3_unfiltered_cleaned_split.json
       
       - name: Show container logs
         if: always()
-        run: docker logs ${CONTAINER_ID} || true
+        run: docker logs ${CONTAINER_ID}
       
       - name: Cleanup
         if: always()
