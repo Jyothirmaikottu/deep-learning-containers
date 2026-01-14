@@ -1,5 +1,5 @@
 
-name: Test - Multi-GPU Runners
+name: Test - Multi-GPU Non DIND Runners
 
 on:
   workflow_dispatch:
