@@ -1,0 +1,96 @@
+name: Test - Multi-GPU Runners
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - ".github/workflows/test-g6-runners.yaml"
+
+jobs:
+  test-1gpu-runner:
+    runs-on: gpu-1gpu-runner
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Job Info
+        run: |
+          echo "=== 1-GPU Runner Test ==="
+          echo "Runner: $(hostname)"
+          echo "Timestamp: $(date -u)"
+
+      - name: Check GPU Info
+        run: |
+          echo "=== GPU Information ==="
+          docker run --rm --gpus=all \
+            nvidia/cuda:12.2.0-base-ubuntu22.04 \
+            nvidia-smi --query-gpu=index,name,memory.total,memory.used --format=csv
+
+      - name: Check Node Resources
+        run: |
+          echo "=== Node Information ==="
+          echo "Hostname: $(hostname)"
+          echo "CPU cores: $(nproc)"
+          echo "Memory: $(free -h | grep Mem | awk '{print $2}')"
+
+      - name: Run GPU Test
+        run: |
+          docker run --rm --gpus=all \
+            -e CUDA_VISIBLE_DEVICES=0 \
+            nvidia/cuda:12.2.0-base-ubuntu22.04 \
+            bash -c "
+              echo '=== 1-GPU Test ==='
+              nvidia-smi
+              echo ''
+              echo '✅ 1-GPU test completed'
+            "
+
+  test-2gpu-runner:
+    runs-on: gpu-2gpu-runner
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Job Info
+        run: |
+          echo "=== 2-GPU Runner Test ==="
+          echo "Runner: $(hostname)"
+          echo "Timestamp: $(date -u)"
+
+      - name: Check GPU Info
+        run: |
+          echo "=== GPU Information ==="
+          docker run --rm --gpus=all \
+            nvidia/cuda:12.2.0-base-ubuntu22.04 \
+            nvidia-smi --query-gpu=index,name,memory.total,memory.used --format=csv
+
+      - name: Check Node Resources
+        run: |
+          echo "=== Node Information ==="
+          echo "Hostname: $(hostname)"
+          echo "CPU cores: $(nproc)"
+          echo "Memory: $(free -h | grep Mem | awk '{print $2}')"
+
+      - name: Run GPU Test
+        run: |
+          docker run --rm --gpus=all \
+            -e CUDA_VISIBLE_DEVICES=0,1 \
+            nvidia/cuda:12.2.0-base-ubuntu22.04 \
+            bash -c "
+              echo '=== 2-GPU Test ==='
+              nvidia-smi
+              echo ''
+              echo 'GPU 0 and GPU 1 should be visible'
+              echo '✅ 2-GPU test completed'
+            "
+
+  summary:
+    needs: [test-1gpu-runner, test-2gpu-runner]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Test Summary
+        run: |
+          echo "=== Multi-GPU Runner Test Complete ==="
+          echo "✅ 1-GPU runner test: Success"
+          echo "✅ 2-GPU runner test: Success"
+          echo "Timestamp: $(date -u)"
