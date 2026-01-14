@@ -20,12 +20,7 @@ jobs:
         run: docker pull ${{ env.SGLANG_IMAGE }}
       
       - name: Verify GPUs
-        run: |
-          echo "=== Host GPUs ==="
-          nvidia-smi
-          echo ""
-          echo "=== Container GPU Test ==="
-          docker run --rm --gpus=all ${{ env.SGLANG_IMAGE }} nvidia-smi
+        run: docker run --rm --gpus=all ${{ env.SGLANG_IMAGE }} nvidia-smi
       
       - name: Start container (2 GPUs)
         run: |
@@ -64,12 +59,7 @@ jobs:
         run: docker pull ${{ env.SGLANG_IMAGE }}
       
       - name: Verify GPUs
-        run: |
-          echo "=== Host GPUs ==="
-          nvidia-smi
-          echo ""
-          echo "=== Container GPU Test ==="
-          docker run --rm --gpus=all ${{ env.SGLANG_IMAGE }} nvidia-smi
+        run: docker run --rm --gpus=all ${{ env.SGLANG_IMAGE }} nvidia-smi
       
       - name: Start container (1 GPU)
         run: |
