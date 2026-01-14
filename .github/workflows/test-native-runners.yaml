@@ -11,7 +11,7 @@ jobs:
     runs-on: gpu-native-runner
     
     container:
-      image: public.ecr.aws/vllm/vllm-openai:latest
+      image: public.ecr.aws/deep-learning-containers/vllm:0.13.0-gpu-py312-ec2
       options: --gpus all
     
     steps:
