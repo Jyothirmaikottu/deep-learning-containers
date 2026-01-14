@@ -42,7 +42,7 @@ jobs:
             -e SM_SGLANG_HOST=127.0.0.1 \
             -e SM_SGLANG_PORT=30000 \
             -e HF_TOKEN=${{ secrets.HUGGING_FACE_HUB_TOKEN }} \
-            ${{ env.SGLANG_IMAGE }}
+            ${{ env.SGLANG_IMAGE }})
           echo "CONTAINER_ID=${CONTAINER_ID}" >> ${GITHUB_ENV}
           echo "Waiting for serving endpoint startup ..."
           sleep 120s
