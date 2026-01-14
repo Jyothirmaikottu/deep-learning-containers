@@ -8,7 +8,7 @@ on:
 
 jobs:
   test-1gpu-runner:
-    runs-on: gpu-1gpu-runner
+    runs-on: g6-1gpu-runner
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -46,7 +46,7 @@ jobs:
             "
 
   test-2gpu-runner:
-    runs-on: gpu-2gpu-runner
+    runs-on: g6-2gpu-runner
     steps:
       - name: Checkout
         uses: actions/checkout@v4
