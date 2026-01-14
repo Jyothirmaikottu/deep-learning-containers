@@ -19,9 +19,6 @@ jobs:
       - name: Pull image
         run: docker pull ${{ env.SGLANG_IMAGE }}
       
-      - name: Verify GPUs
-        run: docker run --rm --gpus=all ${{ env.SGLANG_IMAGE }} nvidia-smi
-      
       - name: Start container (2 GPUs)
         run: |
           CONTAINER_ID=$(docker run -d --rm --gpus=all \
@@ -34,15 +31,18 @@ jobs:
           echo "CONTAINER_ID=${CONTAINER_ID}" >> ${GITHUB_ENV}
           sleep 60
       
+      - name: Verify GPUs
+        run: docker exec ${CONTAINER_ID} nvidia-smi
+      
       - name: Test inference
         run: |
           docker exec ${CONTAINER_ID} curl -X POST http://localhost:30000/generate \
             -H "Content-Type: application/json" \
             -d '{"text": "Hello, how are you?", "sampling_params": {"temperature": 0.7, "max_new_tokens": 50}}'
       
-      - name: Show GPU usage
+      - name: Show container logs
         if: always()
-        run: docker exec ${CONTAINER_ID} nvidia-smi || true
+        run: docker logs ${CONTAINER_ID} || true
       
       - name: Cleanup
         if: always()
@@ -57,9 +57,6 @@ jobs:
       - name: Pull image
         run: docker pull ${{ env.SGLANG_IMAGE }}
       
-      - name: Verify GPUs
-        run: docker run --rm --gpus=all ${{ env.SGLANG_IMAGE }} nvidia-smi
-      
       - name: Start container (1 GPU)
         run: |
           CONTAINER_ID=$(docker run -d --rm --gpus=all \
@@ -71,15 +68,18 @@ jobs:
           echo "CONTAINER_ID=${CONTAINER_ID}" >> ${GITHUB_ENV}
           sleep 45
       
+      - name: Verify GPUs
+        run: docker exec ${CONTAINER_ID} nvidia-smi
+      
       - name: Test inference
         run: |
           docker exec ${CONTAINER_ID} curl -X POST http://localhost:30000/generate \
             -H "Content-Type: application/json" \
             -d '{"text": "Hello, how are you?", "sampling_params": {"temperature": 0.7, "max_new_tokens": 50}}'
       
-      - name: Show GPU usage
+      - name: Show container logs
         if: always()
-        run: docker exec ${CONTAINER_ID} nvidia-smi || true
+        run: docker logs ${CONTAINER_ID} || true
       
       - name: Cleanup
         if: always()
