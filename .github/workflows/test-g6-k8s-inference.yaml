@@ -1,0 +1,52 @@
+name: Test G6 Kubernetes Runner
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - ".github/workflows/test-g6-k8s-inference.yaml"
+
+jobs:
+  test-gpu-inference:
+    runs-on: g6-k8s-runner
+    
+    container:
+      image: nvidia/cuda:12.9.1-runtime-ubuntu24.04
+      options: --gpus all
+      
+    steps:
+      - name: Check GPU availability
+        run: |
+          nvidia-smi
+          echo "GPU Count: $(nvidia-smi --list-gpus | wc -l)"
+          
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Install Python
+        run: |
+          apt-get update
+          apt-get install -y python3 python3-pip
+          
+      - name: Install dependencies
+        run: |
+          pip3 install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+          
+      - name: Test PyTorch GPU
+        run: |
+          python3 -c "import torch; print(f'PyTorch version: {torch.__version__}'); print(f'CUDA available: {torch.cuda.is_available()}'); print(f'GPU count: {torch.cuda.device_count()}')"
+          
+      - name: Run inference test
+        run: |
+          python3 -c "
+          import torch
+          device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+          print(f'Using device: {device}')
+          
+          # Simple tensor operation on GPU
+          x = torch.randn(1000, 1000).to(device)
+          y = torch.randn(1000, 1000).to(device)
+          z = torch.matmul(x, y)
+          print(f'Matrix multiplication successful on {device}')
+          print(f'Result shape: {z.shape}')
+          "
