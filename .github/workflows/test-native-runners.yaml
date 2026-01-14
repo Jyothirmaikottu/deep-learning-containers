@@ -4,15 +4,13 @@ on:
   workflow_dispatch:
   push:
     paths:
-        - ".github/workflows/test-native-runners.yaml"
+      - ".github/workflows/test-native-runners.yaml"
 
 jobs:
   vllm-inference:
     runs-on: gpu-native-runner
-    
     container:
       image: public.ecr.aws/deep-learning-containers/vllm:0.13.0-gpu-py312-ec2
-      options: --gpus all
     
     steps:
       - name: Check GPU availability
@@ -23,7 +21,6 @@ jobs:
           vllm serve facebook/opt-125m \
             --host 0.0.0.0 \
             --port 8000 &
-          
           echo "Waiting for vLLM server to start..."
           sleep 30
       
