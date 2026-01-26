@@ -34,7 +34,9 @@ jobs:
       - name: Run GPU Test
         run: |
           echo "NVIDIA_VISIBLE_DEVICES from K8s: ${NVIDIA_VISIBLE_DEVICES:-not set}"
-          docker run --rm --gpus=all \
+          docker run --rm \
+            -e NVIDIA_VISIBLE_DEVICES="${NVIDIA_VISIBLE_DEVICES:-all}" \
+            --runtime=nvidia \
             nvidia/cuda:12.2.0-runtime-ubuntu22.04 \
             bash -c "
               echo '=== 1-GPU Test ==='
@@ -77,7 +79,10 @@ jobs:
       - name: Run GPU Test
         run: |
           echo "NVIDIA_VISIBLE_DEVICES from K8s: ${NVIDIA_VISIBLE_DEVICES:-not set}"
-          docker run --rm --gpus=all \
+          # Use Kubernetes GPU allocation instead of --gpus=all
+          docker run --rm \
+            -e NVIDIA_VISIBLE_DEVICES="${NVIDIA_VISIBLE_DEVICES:-all}" \
+            --runtime=nvidia \
             nvidia/cuda:12.2.0-runtime-ubuntu22.04 \
             bash -c "
               echo '=== 2-GPU Test ==='
@@ -120,9 +125,11 @@ jobs:
       - name: Run Parallel GPU Test
         run: |
           echo "NVIDIA_VISIBLE_DEVICES from K8s: ${NVIDIA_VISIBLE_DEVICES:-not set}"
-          echo "Testing ${{ matrix.runner }} with --gpus=all"
+          echo "Testing ${{ matrix.runner }} with GPU isolation"
           
-          docker run --rm --gpus=all \
+          docker run --rm \
+            -e NVIDIA_VISIBLE_DEVICES="${NVIDIA_VISIBLE_DEVICES:-all}" \
+            --runtime=nvidia \
             nvidia/cuda:12.2.0-runtime-ubuntu22.04 \
             bash -c "
               echo '=== Parallel Test Job ${{ matrix.job_id }} ==='
