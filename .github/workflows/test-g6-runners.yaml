@@ -8,7 +8,7 @@ on:
 
 jobs:
   test-1gpu-runner:
-    runs-on: g6-1gpu-host-docker-fixed
+    runs-on: g6-1gpu-runner
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -84,7 +84,7 @@ jobs:
             "
 
   test-2gpu-runner:
-    runs-on: g6-2gpu-host-docker-fixed 
+    runs-on: g6-2gpu-runner
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -159,7 +159,7 @@ jobs:
             "
 
   debug-comparison:
-    runs-on: g6-1gpu-host-docker-fixed 
+    runs-on: g6-1gpu-runner
     steps:
       - name: Compare Old vs New Methods
         run: |
