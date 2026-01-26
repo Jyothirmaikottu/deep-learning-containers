@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   push:
     paths:
-      - ".github/workflows/test-g6-autoscaling.yml"
+      - ".github/workflows/test-g6-runners.yaml"
 
 jobs:
   test-1gpu-runner:
