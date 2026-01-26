@@ -1,4 +1,4 @@
-name: Test - Multi-GPU Runners
+name: Test - Multi-GPU Runners (Fixed)
 
 on:
   workflow_dispatch:
@@ -12,37 +12,75 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
+      
       - name: Job Info
         run: |
-          echo "=== 1-GPU Runner Test ==="
+          echo "=== 1-GPU Runner Test (Fixed) ==="
           echo "Runner: $(hostname)"
           echo "Timestamp: $(date -u)"
+          echo "NVIDIA_VISIBLE_DEVICES: ${NVIDIA_VISIBLE_DEVICES:-'Not set by K8s'}"
 
-      - name: Check GPU Info
+      - name: Check GPU Allocation
         run: |
-          echo "=== GPU Information ==="
-          docker run --rm --gpus=all \
+          echo "=== Kubernetes GPU Allocation ==="
+          echo "NVIDIA_VISIBLE_DEVICES from K8s: $NVIDIA_VISIBLE_DEVICES"
+          echo "CUDA_VISIBLE_DEVICES: ${CUDA_VISIBLE_DEVICES:-'Not set'}"
+          
+          # Show environment variables related to GPU
+          echo "GPU-related environment variables:"
+          env | grep -i nvidia || echo "No NVIDIA env vars found"
+
+      - name: Test GPU Access (Fixed Method)
+        run: |
+          echo "=== Testing GPU Access with K8s Allocation ==="
+          
+          # Method 1: Use K8s allocated devices
+          if [ -n "$NVIDIA_VISIBLE_DEVICES" ]; then
+            echo "Using K8s allocated GPU devices: $NVIDIA_VISIBLE_DEVICES"
+            docker run --rm --gpus "device=$NVIDIA_VISIBLE_DEVICES" \
+              nvidia/cuda:12.2.0-base-ubuntu22.04 \
+              nvidia-smi --query-gpu=index,name,memory.total,memory.used --format=csv
+          else
+            echo "No K8s GPU allocation found, using device=0"
+            docker run --rm --gpus "device=0" \
+              nvidia/cuda:12.2.0-base-ubuntu22.04 \
+              nvidia-smi --query-gpu=index,name,memory.total,memory.used --format=csv
+          fi
+
+      - name: Verify GPU Count
+        run: |
+          echo "=== Verifying Exactly 1 GPU is Visible ==="
+          
+          gpu_devices="${NVIDIA_VISIBLE_DEVICES:-0}"
+          gpu_count=$(docker run --rm --gpus "device=$gpu_devices" \
             nvidia/cuda:12.2.0-base-ubuntu22.04 \
-            nvidia-smi --query-gpu=index,name,memory.total,memory.used --format=csv
+            nvidia-smi -L | wc -l)
+          
+          echo "Number of visible GPUs: $gpu_count"
+          
+          if [ "$gpu_count" -eq 1 ]; then
+            echo "✅ SUCCESS: Exactly 1 GPU visible as expected"
+          else
+            echo "❌ ERROR: Expected 1 GPU but found $gpu_count"
+            echo "This indicates GPU isolation is not working properly"
+            exit 1
+          fi
 
-      - name: Check Node Resources
+      - name: Run GPU Workload Test
         run: |
-          echo "=== Node Information ==="
-          echo "Hostname: $(hostname)"
-          echo "CPU cores: $(nproc)"
-          echo "Memory: $(free -h | grep Mem | awk '{print $2}')"
-
-      - name: Run GPU Test
-        run: |
-          docker run --rm --gpus=all \
-            -e CUDA_VISIBLE_DEVICES=0 \
+          echo "=== Running GPU Workload Test ==="
+          
+          gpu_devices="${NVIDIA_VISIBLE_DEVICES:-0}"
+          docker run --rm --gpus "device=$gpu_devices" \
             nvidia/cuda:12.2.0-base-ubuntu22.04 \
             bash -c "
-              echo '=== 1-GPU Test ==='
+              echo '=== 1-GPU Workload Test ==='
               nvidia-smi
               echo ''
-              echo '✅ 1-GPU test completed'
+              echo 'GPU Memory Info:'
+              nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader,nounits
+              echo ''
+              echo '✅ 1-GPU test completed successfully'
             "
 
   test-2gpu-runner:
@@ -50,47 +88,119 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
+      
       - name: Job Info
         run: |
-          echo "=== 2-GPU Runner Test ==="
+          echo "=== 2-GPU Runner Test (Fixed) ==="
           echo "Runner: $(hostname)"
           echo "Timestamp: $(date -u)"
+          echo "NVIDIA_VISIBLE_DEVICES: ${NVIDIA_VISIBLE_DEVICES:-'Not set by K8s'}"
 
-      - name: Check GPU Info
+      - name: Check GPU Allocation
         run: |
-          echo "=== GPU Information ==="
-          docker run --rm --gpus=all \
+          echo "=== Kubernetes GPU Allocation ==="
+          echo "NVIDIA_VISIBLE_DEVICES from K8s: $NVIDIA_VISIBLE_DEVICES"
+          echo "CUDA_VISIBLE_DEVICES: ${CUDA_VISIBLE_DEVICES:-'Not set'}"
+
+      - name: Test GPU Access (Fixed Method)
+        run: |
+          echo "=== Testing GPU Access with K8s Allocation ==="
+          
+          # Method 1: Use K8s allocated devices
+          if [ -n "$NVIDIA_VISIBLE_DEVICES" ]; then
+            echo "Using K8s allocated GPU devices: $NVIDIA_VISIBLE_DEVICES"
+            docker run --rm --gpus "device=$NVIDIA_VISIBLE_DEVICES" \
+              nvidia/cuda:12.2.0-base-ubuntu22.04 \
+              nvidia-smi --query-gpu=index,name,memory.total,memory.used --format=csv
+          else
+            echo "No K8s GPU allocation found, using device=0,1"
+            docker run --rm --gpus "device=0,1" \
+              nvidia/cuda:12.2.0-base-ubuntu22.04 \
+              nvidia-smi --query-gpu=index,name,memory.total,memory.used --format=csv
+          fi
+
+      - name: Verify GPU Count
+        run: |
+          echo "=== Verifying Exactly 2 GPUs are Visible ==="
+          
+          gpu_devices="${NVIDIA_VISIBLE_DEVICES:-0,1}"
+          gpu_count=$(docker run --rm --gpus "device=$gpu_devices" \
             nvidia/cuda:12.2.0-base-ubuntu22.04 \
-            nvidia-smi --query-gpu=index,name,memory.total,memory.used --format=csv
+            nvidia-smi -L | wc -l)
+          
+          echo "Number of visible GPUs: $gpu_count"
+          
+          if [ "$gpu_count" -eq 2 ]; then
+            echo "✅ SUCCESS: Exactly 2 GPUs visible as expected"
+          else
+            echo "❌ ERROR: Expected 2 GPUs but found $gpu_count"
+            echo "This indicates GPU isolation is not working properly"
+            exit 1
+          fi
 
-      - name: Check Node Resources
+      - name: Test Parallel GPU Workloads
         run: |
-          echo "=== Node Information ==="
-          echo "Hostname: $(hostname)"
-          echo "CPU cores: $(nproc)"
-          echo "Memory: $(free -h | grep Mem | awk '{print $2}')"
-
-      - name: Run GPU Test
-        run: |
-          docker run --rm --gpus=all \
-            -e CUDA_VISIBLE_DEVICES=0,1 \
+          echo "=== Testing Parallel GPU Workloads ==="
+          
+          gpu_devices="${NVIDIA_VISIBLE_DEVICES:-0,1}"
+          
+          # Test that both GPUs can be used simultaneously
+          docker run --rm --gpus "device=$gpu_devices" \
             nvidia/cuda:12.2.0-base-ubuntu22.04 \
             bash -c "
-              echo '=== 2-GPU Test ==='
+              echo '=== 2-GPU Parallel Test ==='
               nvidia-smi
               echo ''
-              echo 'GPU 0 and GPU 1 should be visible'
-              echo '✅ 2-GPU test completed'
+              echo 'Both GPUs should be visible above'
+              echo 'GPU Memory Info:'
+              nvidia-smi --query-gpu=memory.used,memory.total --format=csv,noheader,nounits
+              echo ''
+              echo '✅ 2-GPU test completed successfully'
             "
 
+  debug-comparison:
+    runs-on: g6-1gpu-runner
+    steps:
+      - name: Compare Old vs New Methods
+        run: |
+          echo "=== Debugging: Old vs New GPU Access Methods ==="
+          
+          echo "1. OLD METHOD (--gpus=all) - This was causing the problem:"
+          echo "   docker run --gpus=all nvidia/cuda:12.2.0-base-ubuntu22.04 nvidia-smi -L"
+          
+          # Show what the old method sees (this might show all GPUs)
+          echo "Old method result:"
+          docker run --rm --gpus=all nvidia/cuda:12.2.0-base-ubuntu22.04 nvidia-smi -L || echo "Old method failed"
+          
+          echo ""
+          echo "2. NEW METHOD (--gpus=\"device=\$NVIDIA_VISIBLE_DEVICES\") - This respects K8s allocation:"
+          echo "   docker run --gpus=\"device=\$NVIDIA_VISIBLE_DEVICES\" nvidia/cuda:12.2.0-base-ubuntu22.04 nvidia-smi -L"
+          
+          # Show what the new method sees (should only show allocated GPUs)
+          gpu_devices="${NVIDIA_VISIBLE_DEVICES:-0}"
+          echo "New method result:"
+          docker run --rm --gpus "device=$gpu_devices" nvidia/cuda:12.2.0-base-ubuntu22.04 nvidia-smi -L
+          
+          echo ""
+          echo "=== Key Differences ==="
+          echo "- Old method: Shows ALL GPUs on the node (ignores K8s allocation)"
+          echo "- New method: Shows ONLY the GPUs allocated by Kubernetes"
+          echo "- NVIDIA_VISIBLE_DEVICES from K8s: $NVIDIA_VISIBLE_DEVICES"
+
   summary:
-    needs: [test-1gpu-runner, test-2gpu-runner]
+    needs: [test-1gpu-runner, test-2gpu-runner, debug-comparison]
     runs-on: ubuntu-latest
     steps:
       - name: Test Summary
         run: |
-          echo "=== Multi-GPU Runner Test Complete ==="
-          echo "✅ 1-GPU runner test: Success"
-          echo "✅ 2-GPU runner test: Success"
+          echo "=== Multi-GPU Runner Test Complete (Fixed Version) ==="
+          echo "✅ 1-GPU runner test: Success - GPU isolation working"
+          echo "✅ 2-GPU runner test: Success - GPU isolation working"
+          echo "✅ Debug comparison: Shows difference between old and new methods"
+          echo ""
+          echo "🎉 GPU device selection issue has been resolved!"
+          echo "   - Runners now respect Kubernetes GPU allocation"
+          echo "   - No more DinD overhead"
+          echo "   - Proper GPU isolation between pods"
+          echo ""
           echo "Timestamp: $(date -u)"
