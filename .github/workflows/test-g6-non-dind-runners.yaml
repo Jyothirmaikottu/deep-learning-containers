@@ -19,10 +19,6 @@ jobs:
           echo "=== 1-GPU Runner Test ==="
           echo "Runner: $(hostname)"
           echo "Timestamp: $(date -u)"
-      - name: Check GPU Info
-        run: |
-          echo "=== GPU Information ==="
-          nvidia-smi --query-gpu=index,name,memory.total,memory.used --format=csv
       - name: Check Node Resources
         run: |
           echo "=== Node Information ==="
@@ -32,7 +28,6 @@ jobs:
       - name: Run GPU Test
         run: |
           docker run --rm --gpus=all \
-            -e CUDA_VISIBLE_DEVICES=0 \
             nvidia/cuda:12.2.0-base-ubuntu22.04 \
             bash -c "
               echo '=== 1-GPU Test ==='
