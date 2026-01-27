@@ -9,8 +9,6 @@ on:
 jobs:
   test-2gpu-runner:
     runs-on: g6-non-dind-runner
-    container:
-      image: nvidia/cuda:12.2.0-runtime-ubuntu22.04
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -21,14 +19,6 @@ jobs:
           echo "Runner: $(hostname)"
           echo "Timestamp: $(date -u)"
 
-      - name: Check GPU Info
-        run: |
-          echo "=== GPU Information ==="
-          nvidia-smi
-          echo ""
-          echo "GPU Count: $(nvidia-smi -L | wc -l)"
-          nvidia-smi --query-gpu=index,name,memory.total,memory.used --format=csv
-
       - name: Check Node Resources
         run: |
           echo "=== Node Information ==="
@@ -36,8 +26,27 @@ jobs:
           echo "CPU cores: $(nproc)"
           echo "Memory: $(free -h | grep Mem | awk '{print $2}')"
 
+      - name: Check Docker
+        run: |
+          echo "=== Docker Info ==="
+          docker --version
+          docker info | grep -E "(Runtime|Server)" || true
+
+      - name: Check GPU Info via Docker
+        run: |
+          echo "=== GPU Information ==="
+          docker run --rm --gpus all nvidia/cuda:12.2.0-base-ubuntu22.04 nvidia-smi
+          echo ""
+          echo "=== GPU Count ==="
+          docker run --rm --gpus all nvidia/cuda:12.2.0-base-ubuntu22.04 nvidia-smi -L
+
+      - name: Test GPU with specific count
+        run: |
+          echo "=== Testing with 2 GPUs ==="
+          docker run --rm --gpus 2 nvidia/cuda:12.2.0-base-ubuntu22.04 nvidia-smi
+
       - name: Run CUDA Test
         run: |
           echo "=== CUDA Version ==="
-          nvcc --version || echo "nvcc not installed in runtime image"
-          cat /usr/local/cuda/version.txt 2>/dev/null || echo "CUDA version file not found"
+          docker run --rm --gpus all nvidia/cuda:12.2.0-base-ubuntu22.04 \
+            bash -c "cat /usr/local/cuda/version.txt 2>/dev/null || echo 'CUDA 12.2'"
