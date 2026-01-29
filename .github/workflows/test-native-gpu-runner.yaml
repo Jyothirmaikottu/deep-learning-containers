@@ -57,16 +57,26 @@ jobs:
           echo "=== Parallel Native GPU Test ==="
           echo "Job ID: ${{ matrix.job_id }}"
           echo "Hostname: $(hostname)"
+          echo "Start Time: $(date -u +%Y-%m-%dT%H:%M:%S)"
 
       - name: Check GPU Allocation
         run: |
-          echo "=== GPU Allocation Check ==="
+          echo "=== GPU Allocation Check for Job ${{ matrix.job_id }} ==="
           echo "NVIDIA_VISIBLE_DEVICES: ${NVIDIA_VISIBLE_DEVICES:-not set}"
+          echo ""
+          echo "GPU UUIDs assigned to this job:"
+          nvidia-smi --query-gpu=index,uuid,name --format=csv
+          echo ""
+          echo "Full GPU Details:"
           nvidia-smi -L
-          nvidia-smi --query-gpu=index,uuid --format=csv
 
-      - name: Simulate Workload
+      - name: Simulate Workload with GPU Lock
         run: |
-          echo "=== Simulating GPU Workload ==="
-          sleep 30
+          echo "=== Job ${{ matrix.job_id }} - Holding GPUs for 60 seconds ==="
+          echo "GPUs held by this job:"
+          nvidia-smi --query-gpu=uuid --format=csv,noheader
+          echo ""
+          echo "Starting workload at: $(date -u +%Y-%m-%dT%H:%M:%S)"
+          sleep 60
+          echo "Finished workload at: $(date -u +%Y-%m-%dT%H:%M:%S)"
           echo "✅ Job ${{ matrix.job_id }} completed"
