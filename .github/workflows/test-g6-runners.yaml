@@ -12,31 +12,30 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      
+
       - name: Job Info
         run: |
           echo "=== 1-GPU Runner Test ==="
           echo "Runner: $(hostname)"
           echo "Timestamp: $(date -u)"
-      
+
       - name: Check GPU Info
         run: |
           echo "=== GPU Information ==="
           nvidia-smi --query-gpu=index,name,memory.total,memory.used --format=csv
-      
+
       - name: Check Node Resources
         run: |
           echo "=== Node Information ==="
           echo "Hostname: $(hostname)"
           echo "CPU cores: $(nproc)"
           echo "Memory: $(free -h | grep Mem | awk '{print $2}')"
-      
+
       - name: Run GPU Test
         run: |
           echo "NVIDIA_VISIBLE_DEVICES from K8s: ${NVIDIA_VISIBLE_DEVICES:-not set}"
           docker run --rm \
             -e NVIDIA_VISIBLE_DEVICES="${NVIDIA_VISIBLE_DEVICES:-all}" \
-            --runtime=nvidia \
             nvidia/cuda:12.2.0-runtime-ubuntu22.04 \
             bash -c "
               echo '=== 1-GPU Test ==='
@@ -57,32 +56,31 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      
+
       - name: Job Info
         run: |
           echo "=== 2-GPU Runner Test ==="
           echo "Runner: $(hostname)"
           echo "Timestamp: $(date -u)"
-      
+
       - name: Check GPU Info
         run: |
           echo "=== GPU Information ==="
           nvidia-smi --query-gpu=index,name,memory.total,memory.used --format=csv
-      
+
       - name: Check Node Resources
         run: |
           echo "=== Node Information ==="
           echo "Hostname: $(hostname)"
           echo "CPU cores: $(nproc)"
           echo "Memory: $(free -h | grep Mem | awk '{print $2}')"
-      
+
       - name: Run GPU Test
         run: |
           echo "NVIDIA_VISIBLE_DEVICES from K8s: ${NVIDIA_VISIBLE_DEVICES:-not set}"
           # Use Kubernetes GPU allocation instead of --gpus=all
           docker run --rm \
             -e NVIDIA_VISIBLE_DEVICES="${NVIDIA_VISIBLE_DEVICES:-all}" \
-            --runtime=nvidia \
             nvidia/cuda:12.2.0-runtime-ubuntu22.04 \
             bash -c "
               echo '=== 2-GPU Test ==='
@@ -107,7 +105,7 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      
+
       - name: Job Info
         run: |
           echo "=== Parallel Scaling Test ==="
@@ -115,13 +113,13 @@ jobs:
           echo "Job ID: ${{ matrix.job_id }}"
           echo "Hostname: $(hostname)"
           echo "Timestamp: $(date -u)"
-      
+
       - name: Check GPU Allocation
         run: |
           echo "=== GPU Allocation Check ==="
           echo "NVIDIA_VISIBLE_DEVICES: ${NVIDIA_VISIBLE_DEVICES:-not set}"
           nvidia-smi --query-gpu=index,name,memory.total,memory.used --format=csv
-      
+
       - name: Run Parallel GPU Test
         run: |
           echo "NVIDIA_VISIBLE_DEVICES from K8s: ${NVIDIA_VISIBLE_DEVICES:-not set}"
@@ -129,7 +127,6 @@ jobs:
           
           docker run --rm \
             -e NVIDIA_VISIBLE_DEVICES="${NVIDIA_VISIBLE_DEVICES:-all}" \
-            --runtime=nvidia \
             nvidia/cuda:12.2.0-runtime-ubuntu22.04 \
             bash -c "
               echo '=== Parallel Test Job ${{ matrix.job_id }} ==='
@@ -146,7 +143,7 @@ jobs:
               echo ''
               echo '✅ Parallel test completed for job ${{ matrix.job_id }}'
             "
-      
+
       - name: Simulate Workload
         run: |
           echo "=== Simulating GPU Workload ==="
