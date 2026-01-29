@@ -1,0 +1,152 @@
+# vLLM Build, Test, and Push Workflow
+# Place this file in .github/workflows/ to use
+# Uses Dockerfile from: deep-learning-containers/vllm/x86_64/gpu/Dockerfile
+# - Dockerfile changes trigger build + test
+# - Other changes only run test against existing ECR image
+
+name: vLLM Build Test Push
+
+on:
+  workflow_dispatch:
+    inputs:
+      model:
+        description: 'Model for inference test'
+        required: false
+        default: 'facebook/opt-125m'
+      force_build:
+        description: 'Force build even without Dockerfile changes'
+        required: false
+        default: false
+        type: boolean
+  push:
+    paths:
+      - 'vllm/x86_64/gpu/Dockerfile'
+      - 'vllm/build_artifacts/**'
+      - 'src/deep_learning_container.py'
+      - 'miscellaneous_scripts/bash_telemetry.sh'
+      - 'scripts/install_efa.sh'
+  pull_request:
+    paths:
+      - 'vllm/x86_64/gpu/Dockerfile'
+      - 'vllm/build_artifacts/**'
+
+env:
+  ECR_REGISTRY: 897880167187.dkr.ecr.us-west-2.amazonaws.com
+  ECR_REPOSITORY: jkottu-dev
+  IMAGE_TAG: vllm-ec2-latest
+  AWS_REGION: us-west-2
+
+jobs:
+  check-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      dockerfile_changed: ${{ steps.check.outputs.dockerfile_changed }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Check for Dockerfile changes
+        id: check
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            if [ "${{ inputs.force_build }}" == "true" ]; then
+              echo "dockerfile_changed=true" >> $GITHUB_OUTPUT
+            else
+              echo "dockerfile_changed=false" >> $GITHUB_OUTPUT
+            fi
+          else
+            # Check if Dockerfile or build artifacts changed
+            CHANGED=$(git diff --name-only HEAD~1 HEAD | grep -E '^(vllm/x86_64/gpu/Dockerfile|vllm/build_artifacts/|src/deep_learning_container.py|miscellaneous_scripts/bash_telemetry.sh|scripts/install_efa.sh)' || true)
+            if [ -n "$CHANGED" ]; then
+              echo "dockerfile_changed=true" >> $GITHUB_OUTPUT
+              echo "Changed files: $CHANGED"
+            else
+              echo "dockerfile_changed=false" >> $GITHUB_OUTPUT
+            fi
+          fi
+
+  build:
+    needs: [check-changes]
+    if: needs.check-changes.outputs.dockerfile_changed == 'true'
+    runs-on: gpu-2gpu-runner
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: AWS credentials check
+        run: aws sts get-caller-identity
+
+      - name: Login to ECR
+        run: |
+          aws ecr get-login-password --region ${{ env.AWS_REGION }} | \
+            docker login --username AWS --password-stdin ${{ env.ECR_REGISTRY }}
+
+      - name: Prepare build context
+        run: |
+          echo "=== Preparing build context ==="
+          mkdir -p build_context
+          
+          # Copy supporting files required by Dockerfile
+          cp src/deep_learning_container.py build_context/
+          cp miscellaneous_scripts/bash_telemetry.sh build_context/
+          cp scripts/install_efa.sh build_context/
+          cp vllm/build_artifacts/dockerd_entrypoint.sh build_context/
+          cp vllm/build_artifacts/sagemaker_entrypoint.sh build_context/ || true
+          cp vllm/x86_64/gpu/Dockerfile build_context/
+          
+          ls -la build_context/
+
+      - name: Build vLLM image
+        run: |
+          cd build_context
+          docker build \
+            --target vllm-ec2 \
+            -t ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }} \
+            .
+
+      - name: Push to ECR
+        run: |
+          docker push ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
+          echo "✅ Pushed ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}"
+
+  test:
+    needs: [build]
+    if: always() && (needs.build.result == 'success' || inputs.skip_build)
+    runs-on: gpu-spot-runner
+    steps:
+      - name: Login to ECR
+        run: |
+          aws ecr get-login-password --region ${{ env.AWS_REGION }} | \
+            docker login --username AWS --password-stdin ${{ env.ECR_REGISTRY }}
+
+      - name: Pull image
+        run: docker pull ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
+
+      - name: GPU check
+        run: docker run --rm --gpus all nvidia/cuda:12.2.0-runtime-ubuntu22.04 nvidia-smi
+
+      - name: Start vLLM server
+        run: |
+          docker run -d --name vllm-server --gpus all -p 8000:8000 \
+            ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }} \
+            --model ${{ inputs.model || 'facebook/opt-125m' }} \
+            --host 0.0.0.0 --port 8000
+          
+          echo "Waiting for server..."
+          for i in {1..60}; do
+            curl -s http://localhost:8000/health && break || sleep 5
+          done
+
+      - name: Run inference
+        run: |
+          curl -X POST http://localhost:8000/v1/completions \
+            -H "Content-Type: application/json" \
+            -d '{"model": "${{ inputs.model || 'facebook/opt-125m' }}", "prompt": "Hello, my name is", "max_tokens": 50}' | jq .
+
+      - name: Cleanup
+        if: always()
+        run: |
+          docker stop vllm-server || true
+          docker rm vllm-server || true
