@@ -1,0 +1,74 @@
+name: Test - K8s Mode GPU Runner
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - ".github/workflows/test-k8s-mode-runner.yaml"
+
+jobs:
+  test-2gpu-k8s-runner:
+    runs-on: g6-2gpu-k8s-runner
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Job Info
+        run: |
+          echo "=== K8s Mode 2-GPU Runner Test ==="
+          echo "Runner: $(hostname)"
+          echo "Timestamp: $(date -u)"
+
+      - name: Check GPU Environment
+        run: |
+          echo "=== GPU Environment ==="
+          echo "NVIDIA_VISIBLE_DEVICES: ${NVIDIA_VISIBLE_DEVICES:-not set}"
+          echo "CUDA_VISIBLE_DEVICES: ${CUDA_VISIBLE_DEVICES:-not set}"
+
+      - name: Check GPU Info
+        run: |
+          echo "=== GPU Information ==="
+          if command -v nvidia-smi &> /dev/null; then
+            nvidia-smi --query-gpu=index,name,memory.total,memory.used --format=csv
+            nvidia-smi -L
+          else
+            echo "nvidia-smi not available in this container"
+          fi
+
+      - name: Check Node Resources
+        run: |
+          echo "=== Node Information ==="
+          echo "Hostname: $(hostname)"
+          echo "CPU cores: $(nproc)"
+          echo "Memory: $(free -h | grep Mem | awk '{print $2}')"
+
+  # Test parallel jobs to verify GPU isolation
+  test-parallel-k8s:
+    strategy:
+      matrix:
+        job_id: [1, 2]
+    runs-on: g6-2gpu-k8s-runner
+    steps:
+      - name: Job Info
+        run: |
+          echo "=== Parallel K8s Mode Test ==="
+          echo "Job ID: ${{ matrix.job_id }}"
+          echo "Hostname: $(hostname)"
+          echo "Timestamp: $(date -u)"
+
+      - name: Check GPU Allocation
+        run: |
+          echo "=== GPU Allocation Check ==="
+          echo "NVIDIA_VISIBLE_DEVICES: ${NVIDIA_VISIBLE_DEVICES:-not set}"
+          if command -v nvidia-smi &> /dev/null; then
+            nvidia-smi -L
+            nvidia-smi --query-gpu=index,uuid --format=csv
+          else
+            echo "nvidia-smi not available"
+          fi
+
+      - name: Simulate Workload
+        run: |
+          echo "=== Simulating GPU Workload ==="
+          sleep 30
+          echo "✅ Job ${{ matrix.job_id }} completed"
