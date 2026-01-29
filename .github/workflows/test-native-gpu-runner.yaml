@@ -1,0 +1,72 @@
+name: Test - Native GPU Runner
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - ".github/workflows/test-native-gpu-runner.yaml"
+
+jobs:
+  test-2gpu-native:
+    runs-on: g6-2gpu-native-runner
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Job Info
+        run: |
+          echo "=== Native GPU Runner Test ==="
+          echo "Runner: $(hostname)"
+          echo "Timestamp: $(date -u)"
+
+      - name: Check GPU Environment
+        run: |
+          echo "=== GPU Environment ==="
+          echo "NVIDIA_VISIBLE_DEVICES: ${NVIDIA_VISIBLE_DEVICES:-not set}"
+          echo "CUDA_VISIBLE_DEVICES: ${CUDA_VISIBLE_DEVICES:-not set}"
+
+      - name: Check GPU Info
+        run: |
+          echo "=== GPU Information ==="
+          nvidia-smi
+          nvidia-smi -L
+          nvidia-smi --query-gpu=index,name,uuid,memory.total,memory.used --format=csv
+
+      - name: Check CUDA
+        run: |
+          echo "=== CUDA Info ==="
+          nvcc --version || echo "nvcc not in PATH"
+          ls -la /usr/local/cuda/bin/ || true
+
+      - name: Check Node Resources
+        run: |
+          echo "=== Node Information ==="
+          echo "Hostname: $(hostname)"
+          echo "CPU cores: $(nproc)"
+          echo "Memory: $(free -h | grep Mem | awk '{print $2}')"
+
+  # Test parallel jobs to verify GPU isolation
+  test-parallel-native:
+    strategy:
+      matrix:
+        job_id: [1, 2]
+    runs-on: g6-2gpu-native-runner
+    steps:
+      - name: Job Info
+        run: |
+          echo "=== Parallel Native GPU Test ==="
+          echo "Job ID: ${{ matrix.job_id }}"
+          echo "Hostname: $(hostname)"
+
+      - name: Check GPU Allocation
+        run: |
+          echo "=== GPU Allocation Check ==="
+          echo "NVIDIA_VISIBLE_DEVICES: ${NVIDIA_VISIBLE_DEVICES:-not set}"
+          nvidia-smi -L
+          nvidia-smi --query-gpu=index,uuid --format=csv
+
+      - name: Simulate Workload
+        run: |
+          echo "=== Simulating GPU Workload ==="
+          sleep 30
+          echo "✅ Job ${{ matrix.job_id }} completed"
