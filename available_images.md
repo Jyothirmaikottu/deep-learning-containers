@@ -44,7 +44,8 @@ Deep Learning Containers Docker Images are available in the following regions:
 | Asia Pacific (Seoul)		     | ap-northeast-2		 |Available 			|None				| 763104351884.dkr.ecr.ap-northeast-2.amazonaws.com/&lt;repository-name>:&lt;image-tag>		   |
 | Asia Pacific (Singapore)	  | ap-southeast-1		 |Available 			|Available			| 763104351884.dkr.ecr.ap-southeast-1.amazonaws.com/&lt;repository-name>:&lt;image-tag>		   |
 | Asia Pacific (Sydney)		    | ap-southeast-2 	 |Available 			|Available			| 763104351884.dkr.ecr.ap-southeast-2.amazonaws.com/&lt;repository-name>:&lt;image-tag>		   |
-| Asia Pacific (Taipei)		    | ap-east-2 	  |Available 			|Available			| 763104351884.dkr.ecr.ap-east-2.amazonaws.com/&lt;repository-name>:&lt;image-tag>		   |
+| Asia Pacific (Taipei)		    | ap-east-2 	  |Available 			|Available			| 975050140332.dkr.ecr.ap-east-2.amazonaws.com/&lt;repository-name>:&lt;image-tag>		   |
+| Asia Pacific (New Zealand)        | ap-southeast-6    |Available             |None           | 633930458069.dkr.ecr.ap-southeast-6.amazonaws.com/&lt;repository-name>:&lt;image-tag>		   |
 | Asia Pacific (Thailand)        | ap-southeast-7    |Available             |None           | 590183813437.dkr.ecr.ap-southeast-7.amazonaws.com/&lt;repository-name>:&lt;image-tag>		   |
 | Asia Pacific (Tokyo)		     | ap-northeast-1		 |Available 			|Available			| 763104351884.dkr.ecr.ap-northeast-1.amazonaws.com/&lt;repository-name>:&lt;image-tag>		   |
 | Canada (Central)			        | ca-central-1		   |Available 			|None				| 763104351884.dkr.ecr.ca-central-1.amazonaws.com/&lt;repository-name>:&lt;image-tag>		     |
@@ -120,10 +121,8 @@ vLLM Containers
 
 | Framework         | Platform	| Python Version Options	| Example URL																						                                                                         |
 |-------------------|-----------|-----------------------|-----------------------------------------------------------------------------------------------------------|
-| vLLM 0.12     | SageMaker 	| 3.12 (py312)			| 763104351884.dkr.ecr.us-east-1.amazonaws.com/vllm:0.12-gpu-py312             |
-| vLLM 0.12     | EC2, ECS, and EKS 	| 3.12 (py312)			| 763104351884.dkr.ecr.us-east-1.amazonaws.com/vllm:0.12-gpu-py312-ec2             |
-| vLLM 0.11     | SageMaker 	| 3.12 (py312)			| 763104351884.dkr.ecr.us-east-1.amazonaws.com/vllm:0.11-gpu-py312             |
-| vLLM 0.11     | EC2, ECS, and EKS 	| 3.12 (py312)			| 763104351884.dkr.ecr.us-east-1.amazonaws.com/vllm:0.11-gpu-py312-ec2             |
+| vLLM 0.13     | SageMaker 	| 3.12 (py312)			| 763104351884.dkr.ecr.us-east-1.amazonaws.com/vllm:0.13-gpu-py312             |
+| vLLM 0.13     | EC2, ECS, and EKS 	| 3.12 (py312)			| 763104351884.dkr.ecr.us-east-1.amazonaws.com/vllm:0.13-gpu-py312-ec2             |
 
 Also available in Amazon ECR Public Gallery for EC2, ECS, and EKS support only: https://gallery.ecr.aws/deep-learning-containers/vllm
 
@@ -330,6 +329,17 @@ Please refer to the following pages to view all available versions and tags for 
 
 To get the latest one, you can check the Hugging Face [documentation](https://huggingface.co/docs/optimum-neuron/en/containers#available-optimum-neuron-containers).
 
+HuggingFace Neuron vLLM Containers
+===============================
+
+To get the latest one, you can check the Hugging Face [documentation](https://huggingface.co/docs/optimum-neuron/en/containers#available-optimum-neuron-containers).
+
+| Framework                                                          | Neuron SDK Version | Job Type  | Supported EC2 Instance Type | Python Version Options | Example URL                                                                                                                                      |
+|--------------------------------------------------------------------|--------------------|-----------|-----------------------------|------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------|
+| vLLM 0.11.0 with NeuronX Inference and HuggingFace Optimum  | Neuron 2.26.1      | inference | inf2/trn2/trn1                   | 3.10 (py310)           | 763104351884.dkr.ecr.us-west-2.amazonaws.com/huggingface-vllm-inference-neuronx:0.11.0-optimum0.4.4-neuronx-py310-sdk2.26.1-ubuntu22.04  |
+| vLLM 0.11.0 with NeuronX Inference and HuggingFace Optimum  | Neuron 2.26.0      | inference | inf2/trn2/trn1                   | 3.10 (py310)           | 763104351884.dkr.ecr.us-west-2.amazonaws.com/huggingface-vllm-inference-neuronx:0.11.0-optimum0.4.2-neuronx-py310-sdk2.26.0-ubuntu22.04  |
+| vLLM 0.10.2 with NeuronX Inference and HuggingFace Optimum  | Neuron 2.26.0     | inference | inf2/trn2/trn1                   | 3.10 (py310)           | 763104351884.dkr.ecr.us-west-2.amazonaws.com/huggingface-vllm-inference-neuronx:0.10.2-neuronx-py310-sdk2.26.0-ubuntu22.04  |
+
 HuggingFace Neuron Inference Containers
 ===============================
 
@@ -386,6 +396,8 @@ Note: Starting from Neuron SDK 2.17.0, Dockerfiles for PyTorch Neuron Containers
 
 | Framework                                                                                                                                          | Neuron Package                                           | Neuron SDK Version | Job Type  | Supported EC2 Instance Types | Python Version Options | Example URL                                                                                                          |
 |----------------------------------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------|--------------------|-----------|------------------------------|------------------------|----------------------------------------------------------------------------------------------------------------------|
+| [PyTorch 2.9.0](https://github.com/aws-neuron/deep-learning-containers/blob/2.27.1/pytorch/inference/2.9.0/Dockerfile.neuronx)              | torch-neuronx, neuronx_distributed, neuronx_distributed_inference | Neuron 2.27.1      | inference | trn1,trn2,trn3,inf2                    | 3.12 (py312)           | 763104351884.dkr.ecr.us-west-2.amazonaws.com/pytorch-inference-neuronx:2.9.0-neuronx-py312-sdk2.27.1-ubuntu24.04     |
+| [PyTorch 2.9.0](https://github.com/aws-neuron/deep-learning-containers/blob/2.27.1/pytorch/training/2.9.0/Dockerfile.neuronx)              | torch-neuronx, neuronx_distributed, neuronx_distributed_training | Neuron 2.27.1      | training | trn1,trn2,trn3,inf2                    | 3.12 (py312)           | 763104351884.dkr.ecr.us-west-2.amazonaws.com/pytorch-training-neuronx:2.9.0-neuronx-py312-sdk2.27.1-ubuntu24.04     |
 | [PyTorch 2.8.0](https://github.com/aws-neuron/deep-learning-containers/blob/2.26.1/pytorch/inference/2.8.0/Dockerfile.neuronx)              | torch-neuronx, neuronx_distributed, neuronx_distributed_inference | Neuron 2.26.1      | inference | trn1,trn2,inf2                    | 3.11 (py311)           | 763104351884.dkr.ecr.us-west-2.amazonaws.com/pytorch-inference-neuronx:2.8.0-neuronx-py311-sdk2.26.1-ubuntu22.04     |
 | [PyTorch 2.8.0](https://github.com/aws-neuron/deep-learning-containers/blob/2.26.1/pytorch/training/2.8.0/Dockerfile.neuronx)              | torch-neuronx, neuronx_distributed, neuronx_distributed_training | Neuron 2.26.1      | training | trn1,trn2,inf2                    | 3.11 (py311)           | 763104351884.dkr.ecr.us-west-2.amazonaws.com/pytorch-training-neuronx:2.8.0-neuronx-py311-sdk2.26.1-ubuntu22.04     |
 | [PyTorch 2.7.0](https://github.com/aws-neuron/deep-learning-containers/blob/2.25.0/docker/pytorch/inference/2.7.0/Dockerfile.neuronx)              | torch-neuronx, transformers-neuronx, neuronx_distributed, neuronx_distributed_inference | Neuron 2.25.0      | inference | trn1,trn2,inf2                    | 3.10 (py310)           | 763104351884.dkr.ecr.us-west-2.amazonaws.com/pytorch-inference-neuronx:2.7.0-neuronx-py310-sdk2.25.0-ubuntu22.04     |
