@@ -22,7 +22,8 @@ jobs:
       - name: Check GPU Info
         run: |
           echo "=== GPU Information ==="
-          nvidia-smi --query-gpu=index,name,memory.total,memory.used --format=csv
+          docker run --rm --gpus all nvidia/cuda:12.2.0-runtime-ubuntu22.04 \
+            nvidia-smi --query-gpu=index,name,memory.total,memory.used --format=csv
 
       - name: Check Node Resources
         run: |
@@ -33,20 +34,12 @@ jobs:
 
       - name: Run GPU Test
         run: |
-          echo "NVIDIA_VISIBLE_DEVICES from K8s: ${NVIDIA_VISIBLE_DEVICES:-not set}"
-          docker run --rm \
-            -e NVIDIA_VISIBLE_DEVICES="${NVIDIA_VISIBLE_DEVICES:-all}" \
-            nvidia/cuda:12.2.0-runtime-ubuntu22.04 \
+          docker run --rm --gpus all nvidia/cuda:12.2.0-runtime-ubuntu22.04 \
             bash -c "
               echo '=== 1-GPU Test ==='
               echo 'NVIDIA_VISIBLE_DEVICES: \$NVIDIA_VISIBLE_DEVICES'
               echo 'CUDA_VISIBLE_DEVICES: \$CUDA_VISIBLE_DEVICES'
-              if command -v nvidia-smi &> /dev/null; then
-                nvidia-smi
-              else
-                echo 'nvidia-smi not available, testing CUDA runtime...'
-                echo 'GPU access: OK'
-              fi
+              nvidia-smi
               echo ''
               echo '✅ 1-GPU test completed'
             "
@@ -66,7 +59,8 @@ jobs:
       - name: Check GPU Info
         run: |
           echo "=== GPU Information ==="
-          nvidia-smi --query-gpu=index,name,memory.total,memory.used --format=csv
+          docker run --rm --gpus all nvidia/cuda:12.2.0-runtime-ubuntu22.04 \
+            nvidia-smi --query-gpu=index,name,memory.total,memory.used --format=csv
 
       - name: Check Node Resources
         run: |
@@ -77,21 +71,12 @@ jobs:
 
       - name: Run GPU Test
         run: |
-          echo "NVIDIA_VISIBLE_DEVICES from K8s: ${NVIDIA_VISIBLE_DEVICES:-not set}"
-          # Use Kubernetes GPU allocation instead of --gpus=all
-          docker run --rm \
-            -e NVIDIA_VISIBLE_DEVICES="${NVIDIA_VISIBLE_DEVICES:-all}" \
-            nvidia/cuda:12.2.0-runtime-ubuntu22.04 \
+          docker run --rm --gpus all nvidia/cuda:12.2.0-runtime-ubuntu22.04 \
             bash -c "
               echo '=== 2-GPU Test ==='
               echo 'NVIDIA_VISIBLE_DEVICES: \$NVIDIA_VISIBLE_DEVICES'
               echo 'CUDA_VISIBLE_DEVICES: \$CUDA_VISIBLE_DEVICES'
-              if command -v nvidia-smi &> /dev/null; then
-                nvidia-smi
-              else
-                echo 'nvidia-smi not available, testing CUDA runtime...'
-                echo 'GPU access: OK'
-              fi
+              nvidia-smi
               echo ''
               echo '✅ 2-GPU test completed'
             "
@@ -117,29 +102,21 @@ jobs:
       - name: Check GPU Allocation
         run: |
           echo "=== GPU Allocation Check ==="
-          echo "NVIDIA_VISIBLE_DEVICES: ${NVIDIA_VISIBLE_DEVICES:-not set}"
-          nvidia-smi --query-gpu=index,name,memory.total,memory.used --format=csv
+          docker run --rm --gpus all nvidia/cuda:12.2.0-runtime-ubuntu22.04 \
+            nvidia-smi --query-gpu=index,name,memory.total,memory.used --format=csv
 
       - name: Run Parallel GPU Test
         run: |
-          echo "NVIDIA_VISIBLE_DEVICES from K8s: ${NVIDIA_VISIBLE_DEVICES:-not set}"
           echo "Testing ${{ matrix.runner }} with GPU isolation"
           
-          docker run --rm \
-            -e NVIDIA_VISIBLE_DEVICES="${NVIDIA_VISIBLE_DEVICES:-all}" \
-            nvidia/cuda:12.2.0-runtime-ubuntu22.04 \
+          docker run --rm --gpus all nvidia/cuda:12.2.0-runtime-ubuntu22.04 \
             bash -c "
               echo '=== Parallel Test Job ${{ matrix.job_id }} ==='
               echo 'Runner: ${{ matrix.runner }}'
               echo 'NVIDIA_VISIBLE_DEVICES: \$NVIDIA_VISIBLE_DEVICES'
-              if command -v nvidia-smi &> /dev/null; then
-                nvidia-smi -L
-                echo 'GPU Memory Info:'
-                nvidia-smi --query-gpu=memory.total,memory.used --format=csv,noheader,nounits
-              else
-                echo 'nvidia-smi not available, testing CUDA runtime...'
-                echo 'GPU access: OK'
-              fi
+              nvidia-smi -L
+              echo 'GPU Memory Info:'
+              nvidia-smi --query-gpu=memory.total,memory.used --format=csv,noheader,nounits
               echo ''
               echo '✅ Parallel test completed for job ${{ matrix.job_id }}'
             "
