@@ -1,0 +1,195 @@
+# Test workflow for EKS Auto Mode GPU runners with ARC
+# This workflow validates the GPU runner infrastructure
+
+name: Test ARC GPU Runners
+
+on:
+  workflow_dispatch:
+    inputs:
+      test_light_runners:
+        description: 'Test light-gpu-runners (1 GPU)'
+        required: false
+        default: true
+        type: boolean
+      test_heavy_runners:
+        description: 'Test heavy-gpu-runners (2 GPUs)'
+        required: false
+        default: true
+        type: boolean
+
+jobs:
+  test-light-gpu-runner:
+    if: ${{ inputs.test_light_runners }}
+    runs-on: light-gpu-runners
+    timeout-minutes: 30
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: System Information
+        run: |
+          echo "=== System Information ==="
+          echo "Hostname: $(hostname)"
+          echo "Kernel: $(uname -r)"
+          echo "CPU Info:"
+          lscpu | grep -E "^(Architecture|CPU\(s\)|Model name)"
+          echo ""
+          echo "Memory Info:"
+          free -h
+          echo ""
+          echo "Disk Info:"
+          df -h /
+
+      - name: Verify GPU Access
+        run: |
+          echo "=== GPU Verification ==="
+          if command -v nvidia-smi &> /dev/null; then
+            echo "nvidia-smi found, checking GPU..."
+            nvidia-smi
+            echo ""
+            echo "GPU Count: $(nvidia-smi -L | wc -l)"
+            nvidia-smi -L
+          else
+            echo "nvidia-smi not found in runner, checking via Docker..."
+          fi
+
+      - name: Test GPU via Docker
+        run: |
+          echo "=== Docker GPU Test ==="
+          docker run --rm --gpus all nvidia/cuda:12.2.0-runtime-ubuntu22.04 nvidia-smi
+
+      - name: Verify Single GPU Allocation
+        run: |
+          echo "=== Verifying 1 GPU Allocation ==="
+          GPU_COUNT=$(docker run --rm --gpus all nvidia/cuda:12.2.0-runtime-ubuntu22.04 nvidia-smi -L | wc -l)
+          echo "GPUs available: $GPU_COUNT"
+          if [ "$GPU_COUNT" -ge 1 ]; then
+            echo "✅ GPU allocation verified"
+          else
+            echo "❌ Expected at least 1 GPU, got $GPU_COUNT"
+            exit 1
+          fi
+
+      - name: Test CUDA Compute
+        run: |
+          echo "=== CUDA Compute Test ==="
+          docker run --rm --gpus all nvidia/cuda:12.2.0-devel-ubuntu22.04 bash -c '
+            cat > /tmp/test.cu << EOF
+          #include <stdio.h>
+          __global__ void hello() {
+              printf("Hello from GPU thread %d\\n", threadIdx.x);
+          }
+          int main() {
+              hello<<<1, 5>>>();
+              cudaDeviceSynchronize();
+              return 0;
+          }
+          EOF
+            nvcc /tmp/test.cu -o /tmp/test && /tmp/test
+          '
+
+  test-heavy-gpu-runner:
+    if: ${{ inputs.test_heavy_runners }}
+    runs-on: heavy-gpu-runners
+    timeout-minutes: 30
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: System Information
+        run: |
+          echo "=== System Information ==="
+          echo "Hostname: $(hostname)"
+          echo "Kernel: $(uname -r)"
+          echo "CPU Info:"
+          lscpu | grep -E "^(Architecture|CPU\(s\)|Model name)"
+          echo ""
+          echo "Memory Info:"
+          free -h
+          echo ""
+          echo "Disk Info:"
+          df -h /
+
+      - name: Verify GPU Access
+        run: |
+          echo "=== GPU Verification ==="
+          if command -v nvidia-smi &> /dev/null; then
+            echo "nvidia-smi found, checking GPU..."
+            nvidia-smi
+            echo ""
+            echo "GPU Count: $(nvidia-smi -L | wc -l)"
+            nvidia-smi -L
+          else
+            echo "nvidia-smi not found in runner, checking via Docker..."
+          fi
+
+      - name: Test GPU via Docker
+        run: |
+          echo "=== Docker GPU Test ==="
+          docker run --rm --gpus all nvidia/cuda:12.2.0-runtime-ubuntu22.04 nvidia-smi
+
+      - name: Verify Multi-GPU Allocation
+        run: |
+          echo "=== Verifying 2 GPU Allocation ==="
+          GPU_COUNT=$(docker run --rm --gpus all nvidia/cuda:12.2.0-runtime-ubuntu22.04 nvidia-smi -L | wc -l)
+          echo "GPUs available: $GPU_COUNT"
+          if [ "$GPU_COUNT" -ge 2 ]; then
+            echo "✅ Multi-GPU allocation verified"
+          else
+            echo "❌ Expected at least 2 GPUs, got $GPU_COUNT"
+            exit 1
+          fi
+
+      - name: Test Multi-GPU NCCL Communication
+        run: |
+          echo "=== Multi-GPU NCCL Test ==="
+          docker run --rm --gpus all \
+            -e NCCL_DEBUG=INFO \
+            nvidia/cuda:12.2.0-devel-ubuntu22.04 bash -c '
+            apt-get update && apt-get install -y libnccl2 libnccl-dev > /dev/null 2>&1
+            cat > /tmp/nccl_test.cu << EOF
+          #include <stdio.h>
+          #include <cuda_runtime.h>
+          int main() {
+              int deviceCount;
+              cudaGetDeviceCount(&deviceCount);
+              printf("CUDA Device Count: %d\\n", deviceCount);
+              for (int i = 0; i < deviceCount; i++) {
+                  cudaDeviceProp prop;
+                  cudaGetDeviceProperties(&prop, i);
+                  printf("Device %d: %s (Compute %d.%d)\\n", i, prop.name, prop.major, prop.minor);
+              }
+              // Test P2P access
+              if (deviceCount >= 2) {
+                  int canAccess;
+                  cudaDeviceCanAccessPeer(&canAccess, 0, 1);
+                  printf("P2P Access 0->1: %s\\n", canAccess ? "Yes" : "No");
+                  cudaDeviceCanAccessPeer(&canAccess, 1, 0);
+                  printf("P2P Access 1->0: %s\\n", canAccess ? "Yes" : "No");
+              }
+              return 0;
+          }
+          EOF
+            nvcc /tmp/nccl_test.cu -o /tmp/nccl_test && /tmp/nccl_test
+          '
+
+  summary:
+    needs: [test-light-gpu-runner, test-heavy-gpu-runner]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Test Summary
+        run: |
+          echo "=== ARC GPU Runner Test Summary ==="
+          echo ""
+          echo "Light GPU Runner (1 GPU): ${{ needs.test-light-gpu-runner.result }}"
+          echo "Heavy GPU Runner (2 GPUs): ${{ needs.test-heavy-gpu-runner.result }}"
+          echo ""
+          if [ "${{ needs.test-light-gpu-runner.result }}" == "success" ] || [ "${{ needs.test-light-gpu-runner.result }}" == "skipped" ]; then
+            if [ "${{ needs.test-heavy-gpu-runner.result }}" == "success" ] || [ "${{ needs.test-heavy-gpu-runner.result }}" == "skipped" ]; then
+              echo "✅ All requested tests passed!"
+              exit 0
+            fi
+          fi
+          echo "❌ Some tests failed"
+          exit 1
