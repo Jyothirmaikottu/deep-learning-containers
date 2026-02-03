@@ -4,6 +4,11 @@
 name: Test ARC GPU Runners
 
 on:
+  push:
+    branches:
+      - master
+      - main
+      - 'feature/eks-arc-gpu-runners'
   workflow_dispatch:
     inputs:
       test_light_runners:
@@ -19,7 +24,7 @@ on:
 
 jobs:
   test-light-gpu-runner:
-    if: ${{ inputs.test_light_runners }}
+    if: ${{ github.event_name == 'push' || inputs.test_light_runners }}
     runs-on: light-gpu-runners
     timeout-minutes: 30
     steps:
@@ -89,7 +94,7 @@ jobs:
           '
 
   test-heavy-gpu-runner:
-    if: ${{ inputs.test_heavy_runners }}
+    if: ${{ github.event_name == 'push' || inputs.test_heavy_runners }}
     runs-on: heavy-gpu-runners
     timeout-minutes: 30
     steps:
