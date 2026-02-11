@@ -18,7 +18,7 @@ jobs:
       
       - name: Start vLLM container (4 GPUs)
         run: |
-          CONTAINER_ID=$(docker run -d --rm --gpus '"device=1,2"' \
+          CONTAINER_ID=$(docker run -d --rm --gpus all \
             -p 8000:8000 \
             public.ecr.aws/deep-learning-containers/vllm:0.13.0-gpu-py312-ec2)
           echo "CONTAINER_ID=$CONTAINER_ID" >> $GITHUB_ENV
