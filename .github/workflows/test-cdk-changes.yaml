@@ -15,7 +15,7 @@ jobs:
 
       - name: Check Docker
         run: |
-          docker info
+          docker pull nvidia/cuda:12.0.0-base-ubuntu22.04
           docker run --rm --gpus all nvidia/cuda:12.0.0-base-ubuntu22.04 nvidia-smi
 
   test-p4d:
@@ -26,5 +26,5 @@ jobs:
 
       - name: Check Docker
         run: |
-          docker info
+          docker pull nvidia/cuda:12.0.0-base-ubuntu22.04
           docker run --rm --gpus all nvidia/cuda:12.0.0-base-ubuntu22.04 nvidia-smi
