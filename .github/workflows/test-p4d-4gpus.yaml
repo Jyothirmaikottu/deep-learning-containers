@@ -8,7 +8,7 @@ on:
 
 jobs:
   vllm-4gpu-test:
-    runs-on: gpu-standard-runners
+    runs-on: p4d-gpu-runners
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
