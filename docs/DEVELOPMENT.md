@@ -1,48 +1,40 @@
-# Documentation Development Guide
+# Content Development Guide
 
-Guide for developers working with AWS Deep Learning Containers documentation.
-
-## Quick Start
-
-```bash
-cd /path/to/deep-learning-containers
-source .venv/bin/activate
-cd docs/src && python main.py --verbose
-```
+Guide for adding and modifying generated content in AWS Deep Learning Containers documentation. For site setup and local development, see [README.md](README.md).
 
 ## Directory Structure
 
 ```
 docs/
 ├── src/
-│   ├── data/                    # Per-image configuration files
+│   ├── data/                                           # Per-image configuration files
 │   │   ├── template/
-│   │   │   └── image-template.yml  # Template with all fields documented
+│   │   │   └── image-template.yml                      # Template with all fields documented
 │   │   ├── pytorch-training/
-│   │   │   └── <version>-<accelerator>-<platform>.yml
+│   │   │   └── <version>-<accelerator>-<platform>.yml  # Naming is for organization only
 │   │   └── ...
-│   ├── legacy/                  # Historical support data
+│   ├── legacy/                                         # Historical support data
 │   │   └── legacy_support.yml
-│   ├── tables/                  # Table column configurations
+│   ├── tables/                                         # Table column configurations
 │   │   └── <repository>.yml
 │   ├── templates/
-│   │   ├── reference/           # Reference page templates
-│   │   └── releasenotes/        # Release notes templates
-│   ├── constants.py             # Path constants and GLOBAL_CONFIG
-│   ├── generate.py              # Generation logic
-│   ├── global.yml               # Shared terminology and configuration
-│   ├── hooks.py                 # MkDocs hooks
-│   ├── image_config.py          # ImageConfig class
-│   ├── macros.py                # MkDocs macros plugin
-│   ├── main.py                  # CLI entry point
-│   ├── sorter.py                # Sorting tiebreaker functions
-│   └── utils.py                 # Utility functions
-├── reference/                   # Generated reference pages
-├── releasenotes/                # Generated release notes
+│   │   ├── reference/                                  # Reference page templates
+│   │   └── releasenotes/                               # Release notes templates
+│   ├── constants.py                                    # Path constants and GLOBAL_CONFIG
+│   ├── generate.py                                     # Generation logic
+│   ├── global.yml                                      # Shared terminology and configuration
+│   ├── hooks.py                                        # MkDocs hooks
+│   ├── image_config.py                                 # ImageConfig class
+│   ├── macros.py                                       # MkDocs macros plugin
+│   ├── main.py                                         # CLI entry point
+│   ├── sorter.py                                       # Sorting tiebreaker functions
+│   └── utils.py                                        # Utility functions
+├── reference/                                          # Generated reference pages
+├── releasenotes/                                       # Generated release notes
 └── mkdocs.yml
 ```
 
-______________________________________________________________________
+---
 
 ## Adding a New Image
 
@@ -55,26 +47,28 @@ Create `docs/src/data/<repository>/<version>-<accelerator>-<platform>.yml`:
 framework: PyTorch
 version: "2.9"
 accelerator: gpu              # gpu, cpu, or neuronx
-python: py312
 platform: ec2                 # ec2 or sagemaker
 tags:
   - "2.9.0-gpu-py312-cu130-ubuntu22.04-ec2"
 
 # Optional metadata
+python: py312
 cuda: cu130
 os: ubuntu22.04
 public_registry: true
 ```
+
+The YAML file name is for organizational purposes only. However, make sure that the image configuration file lives in the correct repository directory.
 
 See `docs/src/data/template/image-template.yml` for all available fields.
 
 ### Step 2: Regenerate
 
 ```bash
-cd docs/src && python main.py --verbose
+python docs/src/main.py --verbose
 ```
 
-______________________________________________________________________
+---
 
 ## Adding Support Policy Dates
 
@@ -82,17 +76,21 @@ Add `ga` and `eop` fields to image configs for repositories that appear in suppo
 
 ```yaml
 ga: "2025-10-15"    # General Availability date
-eop: "2026-10-15"   # End of Patch date
+eop: "2035-10-15"   # End of Patch date
 ```
 
 **Version Consolidation:**
 
-- Images with the same major.minor version (e.g., `2.6.0` and `2.6.1`) are consolidated into a single row displayed as `2.6` if they have identical GA/EOP dates
-- If patch versions have different GA/EOP dates, each is displayed separately with full version (e.g., `2.6.0`, `2.6.1`) and a warning is logged
+- Images with the same major.minor version and identical GA/EOP dates are consolidated into a single row displayed as `2.6` with the framework group name (e.g., "PyTorch")
+- If the same version has different GA/EOP dates across repository types (e.g., training vs inference), separate rows are created showing the specific repository type: "PyTorch Training" and "PyTorch Inference"
+- ARM64 variants are automatically consolidated with their base repository
+- If patch versions within the same repository have different GA/EOP dates, each is displayed separately with full version (e.g., `2.6.0`, `2.6.1`) and a warning is logged
 
-**Validation:** All images in the same framework group with the same full version (X.Y.Z) must have identical GA/EOP dates.
+**Flexibility:** Repositories in the same framework group (e.g., pytorch-training and pytorch-inference) can have different GA/EOP dates for the same version. The system will automatically create separate rows showing the specific repository type when dates differ.
 
-______________________________________________________________________
+**Example:** If PyTorch 2.6 Training has EOP 2025-10-15 but PyTorch 2.6 Inference has EOP 2026-10-15, the support policy table will show two separate rows with "PyTorch Training" and "PyTorch Inference" in the Framework column.
+
+---
 
 ## Adding Release Notes
 
@@ -137,7 +135,11 @@ Release notes are generated automatically for images with `announcements` and `p
 
 Sections render in YAML order as bullet lists.
 
-______________________________________________________________________
+Section headers in optional sections are rendered via the section key.
+To format your optional section headers, add a new field in `docs/src/global.yml` under `display_names` section.
+Eg: deprecation_notice section will render its header as `## deprecation_notice` unless a formatted string is provided in `docs/src/global.yml`.
+
+---
 
 ## Adding a New Repository
 
@@ -165,7 +167,7 @@ ______________________________________________________________________
      - my-repo
    ```
 
-______________________________________________________________________
+---
 
 ## Editing Table Columns
 
@@ -181,8 +183,10 @@ columns:
 ```
 
 **Available fields:** `framework_version`, `python`, `cuda`, `sdk`, `accelerator`, `platform`, `os`, `example_url`, `version`, `ga`, `eop`, `framework_group`, `repository`, `release_note_link`
+To add additional fields, ensure that the image configuration YAML file contains said field of the same name.
+Additionally, if you require the field to be formatted, add an additional attribute in `ImageConfig` class of `display_<field_name>` to grab the formatted field.
 
-______________________________________________________________________
+---
 
 ## Legacy Support Data
 
@@ -195,7 +199,9 @@ pytorch:
     eop: "2025-10-29"
 ```
 
-______________________________________________________________________
+Generally, this is only required if an image configuration file does not already exist and the image is already past its support.
+
+---
 
 ## Global Configuration
 
@@ -204,27 +210,21 @@ ______________________________________________________________________
 - **Terminology:** `aws`, `dlc_long`, `sagemaker`, etc.
 - **display_names:** Repository and package display names
 - **framework_groups:** Support policy consolidation groups
-- **table_order:** Order of tables in available_images.md
+- **table_order:** Order of tables displayed within the documentations website (eg: available_images.md and support_policy.md)
 - **platforms/accelerators:** Display mappings
 
-______________________________________________________________________
+---
 
-## Running Generation
+## Tutorials Changes
 
-```bash
-# Full generation
-python main.py --verbose
+For any changes required to the tutorial pages, create a new PR in
+[aws-samples/sample-aws-deep-learning-containers](https://github.com/aws-samples/sample-aws-deep-learning-containers.git).
 
-# Specific outputs
-python main.py --available-images-only
-python main.py --support-policy-only
-python main.py --release-notes-only
+> **Important**: When making changes to the tutorials page, make sure that you update the tutorials
+> [index.md](https://github.com/aws-samples/sample-aws-deep-learning-containers/blob/main/index.md) and
+> [.nav.yaml](https://github.com/aws-samples/sample-aws-deep-learning-containers/blob/main/.nav.yml) accordingly.
 
-# Preview site
-cd docs && mkdocs serve
-```
-
-______________________________________________________________________
+---
 
 ## Troubleshooting
 

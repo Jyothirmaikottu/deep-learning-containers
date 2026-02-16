@@ -10,13 +10,31 @@ Within this documentations page, website navigation through `.nav.yml` file shou
 
 ## Documentation Generation System
 
-The documentation uses an automatic generation system for `available_images.md`, `support_policy.md`, and release notes.
+The documentation uses an automatic generation system for `index.md`, `available_images.md`, `support_policy.md`, and release notes.
+
+### Homepage Generation (README.md → index.md)
+
+`README.md` at the repository root is the **source of truth** for the homepage. It uses hardcoded display names and absolute URLs to `SITE_URL` (`https://aws.github.io/deep-learning-containers/`) so it renders correctly on GitHub. HTML elements use `align="center"` (not `style="text-align:center"`) for GitHub compatibility.
+
+`docs/index.md` is **generated** (listed in `.gitignore`) by `generate_index()` which:
+
+1. Reads `README.md` content
+1. Strips `SITE_URL` prefix from absolute URLs to produce relative links (e.g., `reference/available_images/`)
+1. Expands the single README logo into dual MkDocs theme-aware logos (`#only-light`/`#only-dark`)
+1. Wraps content in `templates/index.template.md` (adds MkDocs frontmatter)
+
+**Logo handling:** README.md contains a single light logo (`AWS_logo_RGB.svg`) so GitHub shows one image. `generate_index()` uses `str.replace()` to expand it into two `<img>` tags with `#only-light` and `#only-dark` fragment identifiers that MkDocs Material uses for theme switching.
+
+Internal doc links in README.md use trailing-slash format (e.g., `https://aws.github.io/deep-learning-containers/security/`). After SITE_URL stripping, these become relative directory-style links that MkDocs resolves automatically.
+
+To update the homepage, edit `README.md` and regenerate: `python docs/src/main.py --index-only`
 
 ### Directory Structure
 
 ```
 docs/src/
 ├── templates/
+│   ├── index.template.md          # Homepage template (wraps README.md content)
 │   ├── reference/                 # Reference page templates
 │   │   ├── available_images.template.md
 │   │   └── support_policy.template.md
@@ -56,11 +74,11 @@ docs/src/
 
 ### File Responsibilities
 
-- `constants.py` - Path constants, global variables, `GLOBAL_CONFIG`, and `RELEASE_NOTES_REQUIRED_FIELDS`
+- `constants.py` - Path constants, global variables, `GLOBAL_CONFIG`, `SITE_URL`, `README_PATH`, and `RELEASE_NOTES_REQUIRED_FIELDS`
 - `sorter.py` - Sorting tiebreaker functions: `platform_sorter`, `accelerator_sorter`, `repository_sorter`
-- `utils.py` - Utility functions: `load_yaml()`, `load_table_config()`, `load_jinja2()`, `render_table()`, `write_output()`, `parse_version()`, `clone_git_repository()`, `build_ecr_uri()`, `build_public_ecr_uri()`, `get_framework_order()`
+- `utils.py` - Utility functions: `load_yaml()`, `load_table_config()`, `load_jinja2()`, `render_table()`, `write_output()`, `parse_version()`, `clone_git_repository()`, `build_ecr_uri()`, `build_public_ecr_uri()`, `get_framework_order()`, `flatten_group_repos()`
 - `image_config.py` - `ImageConfig` class, image loaders (`load_repository_images`, `load_legacy_images`, `load_images_by_framework_group`), `sort_by_version`, `get_latest_image_uri`, `build_image_row`, `check_public_registry`
-- `generate.py` - `generate_support_policy()`, `generate_available_images()`, `generate_release_notes()`, `generate_all()`
+- `generate.py` - `generate_index()`, `generate_support_policy()`, `generate_available_images()`, `generate_release_notes()`, `generate_all()`, helpers: `_consolidate_framework_version()`, `_collapse_minor_versions()`
 - `macros.py` - MkDocs macros plugin integration
 - `hooks.py` - MkDocs hooks entry point
 
@@ -338,16 +356,19 @@ display_names:
   known_issues: "Known Issues"
 
 # Framework groups for support policy consolidation (lowercase keys)
+# Flat list: repos split directly to per-repo rows on mismatch
+# Nested dict: repos consolidate by sub-group first on mismatch
 framework_groups:
   pytorch:
-    - pytorch-training
-    - pytorch-inference
-    - pytorch-training-arm64
-    - pytorch-inference-arm64
-  tensorflow:
-    - tensorflow-training
-    - tensorflow-inference
-    - tensorflow-inference-arm64
+    pytorch-training:
+      - pytorch-training
+      - pytorch-training-arm64
+    pytorch-inference:
+      - pytorch-inference
+      - pytorch-inference-arm64
+  vllm:
+    - vllm
+    - vllm-arm64
 
 # Table order (controls order in available_images.md and support_policy.md)
 table_order:
@@ -358,20 +379,25 @@ table_order:
 
 ### Support Policy Consolidation
 
-The `framework_groups` configuration consolidates support policy rows by framework. Repositories in the same group are combined into a single row using the framework name (e.g., "PyTorch").
+The `framework_groups` configuration consolidates support policy rows by framework. The generation follows a 3-step flow:
 
-**Version Display:**
+**Validation (at load time):** `load_repository_images` validates that images sharing the same full version within a single repository have identical GA/EOP dates. Raises `ValueError` if not (this is a data bug).
 
-- Images with the same major.minor version (e.g., `2.6.0` and `2.6.1`) are consolidated into a single row displayed as `2.6` if they have identical GA/EOP dates
-- If patch versions have different GA/EOP dates, each is displayed separately with full version (e.g., `2.6.0`, `2.6.1`) and a warning is logged
+**Step 1 — Group by full version:** All images in a framework group are grouped by full version (e.g., `2.6.0`), deduplicated per repository (one representative image per repo since intra-repo consistency is guaranteed).
 
-**Requirements:**
+**Step 2 — Hierarchical consolidation** via `_consolidate_framework_version()`: For each full version, tries three levels of date agreement, stopping at the first that succeeds:
 
-- All repositories in a group that have a given full version (X.Y.Z) must have identical GA/EOP dates
+1. Framework group — all repos agree → single row (e.g., "PyTorch")
+1. Sub-group — repos within a sub-group agree → one row per sub-group (e.g., "PyTorch Inference"). Only applies to nested dict groups in `framework_groups`.
+1. Per-repo — no agreement → one row per repository using its individual display name
+
+**Step 3 — Major.minor collapse:** Non-split entries are grouped by major.minor. If all full versions within a major.minor share the same dates, they collapse into a single row displayed as the major.minor (e.g., `2.6`). Collapse is skipped for any major.minor that has split (per-repo) rows.
+
+**Behavior:**
+
 - Missing versions in some repositories are allowed (only present repos are consolidated)
-- A `ValueError` is raised if dates differ within a group for the same full version
 
-To add a new framework group, add an entry to `framework_groups` with the framework name as key and list of repositories as value.
+To add a new framework group, add an entry to `framework_groups` with the framework name as key and list of repositories as value. Use nested dict format if you need intermediate sub-group consolidation when dates differ.
 
 ### Reordering Tables and Columns
 
@@ -398,6 +424,7 @@ cd docs/src && python main.py --verbose
 python main.py --available-images-only
 python main.py --support-policy-only
 python main.py --release-notes-only
+python main.py --index-only
 
 # With MkDocs (automatic via hooks)
 mkdocs serve

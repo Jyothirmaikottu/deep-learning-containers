@@ -85,20 +85,35 @@ def parse_version(version_str: str | None) -> Version:
 def clone_git_repository(git_repository: str, target_dir: str | Path) -> None:
     """Clone a git repository to target directory if it doesn't exist."""
     if os.path.exists(target_dir):
+        LOGGER.info(
+            f"{git_repository} already exists within {target_dir}"
+            "If you want to pull the latest commit of the repository, either delete the repository and re-run generation"
+            f"or manually run `git pull` within the {target_dir}"
+        )
         return
     subprocess.run(["git", "clone", "--depth", "1", git_repository, target_dir], check=True)
 
 
+def flatten_group_repos(group_config: list | dict) -> list[str]:
+    """Return all repository names from a framework_groups entry (flat list or nested dict)."""
+    if isinstance(group_config, list):
+        return group_config
+    return [repo for sub_repos in group_config.values() for repo in sub_repos]
+
+
+def build_repo_map(groups: dict) -> dict[str, str]:
+    """Build reverse mapping from repository name to its parent group key."""
+    repo_map = {}
+    for group_name, group_config in groups.items():
+        for repo in flatten_group_repos(group_config):
+            repo_map[repo] = group_name
+    return repo_map
+
+
 def get_framework_order() -> list[str]:
     """Derive framework order from table_order, collapsing framework groups."""
-    table_order = GLOBAL_CONFIG.get("table_order", [])
-    framework_groups = GLOBAL_CONFIG.get("framework_groups", {})
-
-    # Build reverse mapping: repo -> framework group
-    repo_to_group = {}
-    for group, repos in framework_groups.items():
-        for repo in repos:
-            repo_to_group[repo] = group
+    table_order = GLOBAL_CONFIG["table_order"]
+    repo_to_group = build_repo_map(GLOBAL_CONFIG.get("framework_groups", {}))
 
     seen = set()
     result = []

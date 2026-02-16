@@ -1,19 +1,16 @@
-# Table Configuration - DJL Inference
+# Table Configuration - HuggingFace vLLM Inference NeuronX
 columns:
   - field: framework_version
     header: "Framework"
-  - field: cuda
-    header: "CUDA"
-  - field: engine
-    header: "Engine"
+  - field: python
+    header: "Python"
+  - field: sdk
+    header: "SDK"
+  - field: optimum
+    header: "Optimum"
   - field: accelerator
     header: "Accelerator"
   - field: platform
     header: "Platform"
   - field: example_url
     header: "Example URL"
-
-tiebreakers:
-  - platform_sorter
-  - accelerator_sorter
-  - engine_sorter

@@ -5,8 +5,10 @@ __pycache__
 .venv
 .ruff_cache
 .pytest_cache
+.vscode
 
 # Generated docs
+docs/index.md
 docs/tutorials
 docs/releasenotes/*/
 docs/reference/available_images.md
