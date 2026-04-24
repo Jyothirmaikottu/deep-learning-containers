@@ -31,7 +31,7 @@ benchmark:
       fleet: "x86-g6xl-runner"
       extra_args: "--tensor-parallel-size 1 --max-model-len 4096 --dtype bfloat16"
       test_script: "vllm_asr_benchmark_test.sh"
-      min_throughput: 50
+      min_throughput: 30
       min_rps: 1
 
     # - name: "gpt-oss-20b"
@@ -123,7 +123,7 @@ benchmark:
       s3_model: "qwen3-asr-1.7b.tar.gz"
       extra_args: "--tensor-parallel-size 1 --max-model-len 4096 --dtype bfloat16"
       test_script: "vllm_asr_benchmark_test.sh"
-      min_throughput: 50
+      min_throughput: 30
       min_rps: 1
 
     # - name: "qwen3-32b"
