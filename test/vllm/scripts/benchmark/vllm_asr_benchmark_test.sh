@@ -26,6 +26,9 @@ VLLM_PORT=8000
 HEALTH_TIMEOUT=600
 HEALTH_INTERVAL=10
 
+# Install audio dependencies (librosa) required by vllm for audio_url processing
+pip install -q "vllm[audio]" 2>/dev/null || pip install -q librosa soundfile
+
 echo "=== Qwen3-ASR Benchmark: ${MODEL_NAME} ==="
 
 pip install -q aiohttp httpx > /dev/null 2>&1
