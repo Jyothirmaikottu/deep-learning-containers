@@ -94,10 +94,14 @@ jobs:
       - name: Copy scripts into container
         run: |
           docker cp test/vllm/scripts/amzn2023/vllm_model_smoke_test.sh ${CONTAINER_ID}:/models/
+          if [ -f "test/vllm/scripts/amzn2023/${{ matrix.test_script || '' }}" ]; then
+            docker cp "test/vllm/scripts/amzn2023/${{ matrix.test_script }}" ${CONTAINER_ID}:/models/
+          fi
 
       - name: Run model smoke test
         run: |
-          docker exec ${CONTAINER_ID} bash /models/vllm_model_smoke_test.sh \
+          TEST_SCRIPT="${{ matrix.test_script || 'vllm_model_smoke_test.sh' }}"
+          docker exec ${CONTAINER_ID} bash "/models/${TEST_SCRIPT}" \
             "/models/${{ matrix.name }}" \
             "${{ matrix.name }}" \
             ${{ matrix.extra_args }}
