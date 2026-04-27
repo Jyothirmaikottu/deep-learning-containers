@@ -53,6 +53,7 @@ jobs:
       framework: ${{ steps.parse.outputs.framework }}
       framework-version: ${{ steps.parse.outputs.framework-version }}
       vllm-ref: ${{ steps.parse.outputs.vllm-ref }}
+      vllm-ref-short: ${{ steps.parse.outputs.vllm-ref-short }}
       python-version: ${{ steps.parse.outputs.python-version }}
       cuda-version: ${{ steps.parse.outputs.cuda-version }}
       os-version: ${{ steps.parse.outputs.os-version }}
@@ -79,6 +80,14 @@ jobs:
           echo "framework=$(jq -r '.common.framework' config.json)" >> $GITHUB_OUTPUT
           echo "framework-version=$(jq -r '.common.framework_version' config.json)" >> $GITHUB_OUTPUT
           echo "vllm-ref=$(jq -r '.common.vllm_ref // "v" + .common.framework_version' config.json)" >> $GITHUB_OUTPUT
+          # Short form for image tag: truncate raw commit SHAs to 8 chars, sanitise other refs.
+          VLLM_REF="$(jq -r '.common.vllm_ref // "v" + .common.framework_version' config.json)"
+          if echo "$VLLM_REF" | grep -qE '^[0-9a-f]{12,}$'; then
+            VLLM_REF_SHORT=$(echo "$VLLM_REF" | cut -c1-8)
+          else
+            VLLM_REF_SHORT=$(echo "$VLLM_REF" | sed -E 's/[^A-Za-z0-9]/_/g')
+          fi
+          echo "vllm-ref-short=${VLLM_REF_SHORT}" >> $GITHUB_OUTPUT
           echo "python-version=$(jq -r '.common.python_version' config.json)" >> $GITHUB_OUTPUT
           echo "cuda-version=$(jq -r '.common.cuda_version' config.json)" >> $GITHUB_OUTPUT
           echo "os-version=$(jq -r '.common.os_version' config.json)" >> $GITHUB_OUTPUT
@@ -126,7 +135,6 @@ jobs:
               - "scripts/common/install_efa_amzn2023.sh"
               - "scripts/common/setup_oss_compliance.sh"
               - "scripts/telemetry/bash_telemetry.sh.template"
-              - "scripts/telemetry/deep_learning_container.py"
               - "scripts/vllm/amzn2023/**"
               - "scripts/vllm/dockerd_entrypoint.sh"
               - "scripts/vllm/sagemaker_entrypoint.sh"
@@ -163,7 +171,8 @@ jobs:
         run: |
           OUTPUT=$(bash scripts/vllm/amzn2023/fetch_cached_wheels.sh \
             ${{ needs.load-config.outputs.cuda-version }} \
-            ${{ needs.load-config.outputs.vllm-ref }})
+            ${{ needs.load-config.outputs.vllm-ref }} \
+            ${{ needs.load-config.outputs.framework-version }})
           echo "$OUTPUT"
           HIT=$(echo "$OUTPUT" | grep -o 'cache-hit=.*' | cut -d= -f2)
           echo "hit=${HIT}" >> $GITHUB_OUTPUT
@@ -179,6 +188,18 @@ jobs:
           mkdir -p docker/vllm/prebuilt_wheels
           mkdir -p docker/vllm/sccache-cache
 
+      - name: Load pinned vLLM versions
+        run: |
+          # Capture vars introduced by sourcing the env file and forward them
+          # to $GITHUB_ENV. EXTRA_BUILD_ARGS is auto-derived (no manual list).
+          before=$(compgen -v | sort)
+          set -a; source docker/vllm/versions.env; set +a
+          new=$(comm -13 <(echo "$before") <(compgen -v | sort) | grep -Ev '^(before|PIPESTATUS|_)$')
+          for v in $new; do
+            [ -n "${!v:-}" ] && echo "${v}=$(echo "${!v}" | xargs)" >> "$GITHUB_ENV"
+          done
+          echo "EXTRA_BUILD_ARGS=$(echo $new | xargs)" >> "$GITHUB_ENV"
+
       - name: Build image
         id: build
         uses: ./.github/actions/build-image
@@ -190,8 +211,8 @@ jobs:
           container-type: ${{ needs.load-config.outputs.container-type }}
           aws-account-id: ${{ vars.CI_AWS_ACCOUNT_ID }}
           aws-region: ${{ vars.AWS_REGION }}
-          tag-pr: ${{ needs.load-config.outputs.framework }}-${{ needs.load-config.outputs.framework-version }}-gpu-${{ needs.load-config.outputs.python-version }}-${{ needs.load-config.outputs.cuda-version }}-${{ needs.load-config.outputs.os-version }}-sagemaker-pr-${{ github.event.pull_request.number }}
-          dockerfile-path: docker/${{ needs.load-config.outputs.framework }}/Dockerfile.amzn2023
+          tag-pr: ${{ needs.load-config.outputs.framework }}-${{ needs.load-config.outputs.framework-version }}-${{ needs.load-config.outputs.vllm-ref-short }}-gpu-${{ needs.load-config.outputs.python-version }}-${{ needs.load-config.outputs.cuda-version }}-${{ needs.load-config.outputs.os-version }}-sagemaker-pr-${{ github.event.pull_request.number }}
+          dockerfile-path: docker/vllm/Dockerfile.amzn2023
           arch-type: ${{ needs.load-config.outputs.arch-type }}
           device-type: ${{ needs.load-config.outputs.device-type }}
           cuda-version: ${{ needs.load-config.outputs.cuda-version }}
@@ -205,7 +226,8 @@ jobs:
         run: |
           bash scripts/vllm/amzn2023/upload_cached_wheels.sh \
             ${{ needs.load-config.outputs.cuda-version }} \
-            ${{ needs.load-config.outputs.vllm-ref }}
+            ${{ needs.load-config.outputs.vllm-ref }} \
+            ${{ needs.load-config.outputs.framework-version }}
 
       - name: Sync sccache cache to S3
         if: success() && steps.wheel-cache.outputs.hit != 'true'
@@ -278,6 +300,7 @@ jobs:
       aws-account-id: ${{ needs.build-image.result == 'success' && vars.CI_AWS_ACCOUNT_ID || vars.PROD_AWS_ACCOUNT_ID }}
       aws-region: ${{ vars.AWS_REGION }}
       framework-version: ${{ needs.load-config.outputs.framework-version }}
+      vllm-ref: ${{ needs.load-config.outputs.vllm-ref }}
       setup-script: test/vllm/scripts/vllm_test_setup.sh
       example-test-script: test/vllm/scripts/amzn2023/vllm_sagemaker_examples_test.sh
     secrets: inherit
