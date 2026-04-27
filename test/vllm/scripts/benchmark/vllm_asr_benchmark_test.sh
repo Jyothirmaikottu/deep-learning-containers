@@ -1,13 +1,15 @@
 #!/bin/bash
 set -euo pipefail
 
-# vLLM Qwen3-ASR Benchmark Test
-# Measures transcription throughput and latency via /v1/chat/completions with audio_url.
-# Reference: https://huggingface.co/Qwen/Qwen3-ASR-1.7B#deployment-with-vllm
+# vLLM ASR Benchmark Test (config-driven)
+# Measures transcription throughput and latency via /v1/chat/completions.
+# Audio fixture is specified by benchmark_audio_fixture in the YAML config
+# and pre-downloaded to /models/test-fixtures/ by the CI workflow.
 #
 # Usage: vllm_asr_benchmark_test.sh <model_dir> <model_name> <runner_type> [extra_vllm_args...]
 #
 # Environment variables (optional):
+# BENCHMARK_AUDIO_FIXTURE - audio filename in /models/test-fixtures/ (default: asr_en.wav)
 # MIN_THROUGHPUT_TOKENS_PER_SEC - minimum output tokens/s (default: 50)
 # MIN_REQUESTS_PER_SEC - minimum requests/s (default: 1)
 # NUM_REQUESTS - number of benchmark requests (default: 50)
@@ -25,13 +27,21 @@ mkdir -p "${RESULTS_DIR}"
 VLLM_PORT=8000
 HEALTH_TIMEOUT=600
 HEALTH_INTERVAL=10
+FIXTURES_DIR="/models/test-fixtures"
+AUDIO_FIXTURE="${BENCHMARK_AUDIO_FIXTURE:-asr_en.wav}"
 
-# Install audio dependencies (librosa) required by vllm for audio_url processing
+# Install audio dependencies required by vllm for audio processing
 pip install -q "vllm[audio]" 2>/dev/null || pip install -q librosa soundfile
+pip install -q aiohttp > /dev/null 2>&1
 
-echo "=== Qwen3-ASR Benchmark: ${MODEL_NAME} ==="
+AUDIO_PATH="${FIXTURES_DIR}/${AUDIO_FIXTURE}"
+if [ ! -f "${AUDIO_PATH}" ]; then
+  echo "ERROR: Missing audio fixture ${AUDIO_PATH}"
+  exit 1
+fi
 
-pip install -q aiohttp httpx > /dev/null 2>&1
+echo "=== ASR Benchmark: ${MODEL_NAME} ==="
+echo "Audio fixture: ${AUDIO_PATH} ($(stat -c%s "${AUDIO_PATH}" 2>/dev/null || stat -f%z "${AUDIO_PATH}") bytes)"
 
 echo "=== Starting vLLM server ==="
 # shellcheck disable=SC2086
@@ -61,14 +71,14 @@ while [ "${elapsed}" -lt "${HEALTH_TIMEOUT}" ]; do
 done
 [ "${elapsed}" -ge "${HEALTH_TIMEOUT}" ] && echo "ERROR: timeout" && exit 1
 
-export MODEL_DIR RESULTS_DIR ARTIFACT_PREFIX VLLM_PORT
+export MODEL_DIR RESULTS_DIR ARTIFACT_PREFIX VLLM_PORT AUDIO_PATH
 export MIN_THROUGHPUT="${MIN_THROUGHPUT_TOKENS_PER_SEC:-50}"
 export MIN_RPS="${MIN_REQUESTS_PER_SEC:-1}"
 export NUM_REQUESTS="${NUM_REQUESTS:-50}"
 
 echo "=== Running ASR benchmark ==="
 python3 << 'BENCH_EOF'
-import asyncio, aiohttp, json, time, statistics, sys, os
+import asyncio, aiohttp, json, time, statistics, sys, os, base64
 
 PORT = int(os.environ["VLLM_PORT"])
 MODEL_DIR = os.environ["MODEL_DIR"]
@@ -78,27 +88,24 @@ MIN_RPS = float(os.environ["MIN_RPS"])
 RESULTS_DIR = os.environ["RESULTS_DIR"]
 ARTIFACT_PREFIX = os.environ["ARTIFACT_PREFIX"]
 
-# Public test audio URLs from Qwen3-ASR repo (varying content)
-AUDIO_URLS = [
-    "https://qianwen-res.oss-cn-beijing.aliyuncs.com/Qwen3-ASR-Repo/asr_en.wav",
-    "https://qianwen-res.oss-cn-beijing.aliyuncs.com/Qwen3-ASR-Repo/asr_zh.wav",
-]
+# Pre-encode audio as base64 data URI
+with open(os.environ["AUDIO_PATH"], "rb") as f:
+    AUDIO_DATA_URI = f"data:audio/wav;base64,{base64.b64encode(f.read()).decode()}"
 
-def make_payload(audio_url):
+def make_payload():
     return {
         "model": MODEL_DIR,
         "messages": [{
             "role": "user",
-            "content": [{"type": "audio_url", "audio_url": {"url": audio_url}}],
+            "content": [{"type": "audio_url", "audio_url": {"url": AUDIO_DATA_URI}}],
         }],
     }
 
-async def send_request(session, audio_url):
-    payload = make_payload(audio_url)
+async def send_request(session):
     start = time.perf_counter()
     async with session.post(
         f"http://localhost:{PORT}/v1/chat/completions",
-        json=payload,
+        json=make_payload(),
         timeout=aiohttp.ClientTimeout(total=120),
     ) as resp:
         result = await resp.json()
@@ -113,20 +120,16 @@ async def send_request(session, audio_url):
     }
 
 async def main():
-    # Warmup
     print("Warmup (3 requests)...")
     async with aiohttp.ClientSession() as session:
         for _ in range(3):
-            await send_request(session, AUDIO_URLS[0])
+            await send_request(session)
 
-    # Benchmark
     results = []
     async with aiohttp.ClientSession() as session:
         wall_start = time.perf_counter()
-        for i in range(NUM_REQUESTS):
-            audio = AUDIO_URLS[i % len(AUDIO_URLS)]
-            r = await send_request(session, audio)
-            results.append(r)
+        for _ in range(NUM_REQUESTS):
+            results.append(await send_request(session))
         wall_time = time.perf_counter() - wall_start
 
     successes = [r for r in results if r["status"] == 200 and r["text"]]
@@ -156,10 +159,7 @@ async def main():
     print(f"Wall time: {report['wall_time_s']}s")
     print(f"Requests/s: {report['requests_per_second']} (min: {MIN_RPS})")
     print(f"Output tokens/s: {report['output_tokens_per_second']} (min: {MIN_THROUGHPUT})")
-    print(f"Latency avg: {report['latency_avg_s']}s")
-    print(f"Latency p50: {report['latency_p50_s']}s")
-    print(f"Latency p95: {report['latency_p95_s']}s")
-    print(f"Latency p99: {report['latency_p99_s']}s")
+    print(f"Latency avg/p50/p95/p99: {report['latency_avg_s']}s / {report['latency_p50_s']}s / {report['latency_p95_s']}s / {report['latency_p99_s']}s")
 
     ok = True
     if report["output_tokens_per_second"] < MIN_THROUGHPUT:
